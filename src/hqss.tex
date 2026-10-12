@@ -1,0 +1,217 @@
+\documentclass[11pt,a4paper,titlepage]{article}
+
+% --- Language Switch: \jatrue for Japanese, \jafalse for English ---
+\newif\ifja
+\jatrue  % Switch to \jafalse to compile English version
+
+% --- Page Geometry & Spacing ---
+\usepackage[a4paper,margin=25mm]{geometry}
+\usepackage{setspace}
+\setstretch{1.15}
+
+% --- LuaLaTeX Engine & Fonts ---
+\usepackage{fontspec}
+\ifja
+  \usepackage{luatexja}
+  \usepackage{luatexja-fontspec}
+  \setmainjfont{Noto Serif CJK JP}[AutoFakeBold=1.5]
+  \setsansjfont{Noto Sans CJK JP}[AutoFakeBold=1.5]
+\fi
+\setmainfont{Noto Serif}
+\setsansfont{Noto Sans}
+\setmonofont{Noto Sans Mono}[Scale=0.9]
+
+% --- Core Packages ---
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+% --- Syntax Highlighting / Code Block Style ---
+\definecolor{codebg}{rgb}{0.96,0.97,0.98}
+\definecolor{codeborder}{rgb}{0.85,0.88,0.92}
+\definecolor{keywordcolor}{rgb}{0.12,0.35,0.68}
+\definecolor{commentcolor}{rgb}{0.42,0.48,0.55}
+
+\lstset{
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  breakatwhitespace=true,
+  frame=single,
+  rulecolor=\color{codeborder},
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false,
+  commentstyle=\color{commentcolor},
+  keywordstyle=\color{keywordcolor}\bfseries
+}
+
+% --- Hyperref Setup ---
+\hypersetup{
+  colorlinks=true,
+  linkcolor=keywordcolor,
+  urlcolor=keywordcolor,
+  citecolor=keywordcolor,
+  pdfborder={0 0 0}
+}
+
+% --- Document Metadata ---
+\title{%
+  \LARGE\textbf{%
+    \ifja
+      HQSS: 公開クラウドと二重分割QRコードによる\\ゼロ知識秘密分散型バックアッププロトコル
+    \else
+      HQSS: Zero-Knowledge Secret Splitting and Backup Protocol\\via Public Cloud and Dual-Segmented QR Codes
+    \fi
+  }
+}
+
+\author{%
+  \textbf{%
+    \ifja Section 9 Inc. 研究開発技術仕様書 \else Technical Monograph / Whitepaper \fi
+  }
+}
+
+\date{%
+  \ifja 2026年10月 \else October 2026 \fi
+}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+\ifja
+本モノグラフでは、暗号化秘密鍵（例：GnuPG秘密鍵）の物理保管コストの極小化と耐障害性を両立する新しいプロトコル「Hybrid QR Secret Splitter (HQSS)」を提案する。本プロトコルは、強度の高い暗号化を施した秘密鍵バイナリを$N$個の断片に分割し、大半の断片（$N-1$個）をパブリッククラウドに平文公開ストレージとして配置する。残存する1つの断片およびクラウド上の断片へのポインタ（URL群）はさらに細分化され、オフライン物理媒体（印刷されたQRコード群）として保持される。復元時には、スマートフォンの標準カメラおよびRFC 3986準拠のURLフラグメント（ハッシュ）を活用することで、サーバーにデータを送信することなく端末ローカル（Webブラウザ内）で自律的に全断片の非同期回収・結合・復号が完了する。本稿では、本方式の暗号学的安全性、耐タンパー性、および運用上の可用性について包括的に検証する。
+\else
+This monograph proposes the Hybrid QR Secret Splitter (HQSS), a novel protocol designed to reconcile minimal physical storage overhead with high availability for master cryptographic keys, such as GnuPG private keys. Under HQSS, a strongly encrypted key is fragmented into $N$ segments; $N-1$ segments are hosted across publicly accessible cloud repositories. The final remaining segment, together with the locator URLs for the remote shares, is split and encoded into multiple physical QR codes. Reconstruction operates entirely client-side: utilizing smartphone cameras and RFC 3986 URL hash fragments, the browser asynchronously aggregates the public fragments, merges the local key pieces, and decrypts the master key without transmitting secret fragments to any third-party infrastructure. We comprehensively evaluate the security guarantees, threat surface, and practical fault-tolerance of this design.
+\fi
+\end{abstract}
+
+\vspace{1.5em}
+
+\section{%
+  \ifja 1. はじめに \else 1. Introduction \fi
+}
+\ifja
+非対称鍵暗号系における秘密鍵（GnuPG/OpenPGPや暗号資産のマスターシード）の長期安全保管は、長らく二律背反の課題を抱えてきた。
+完全なオフライン保管（ペーパーウォレットやハードウェアウォレット）は物理的破損や紛失、印刷面積の増大という問題を伴い、一方でクラウドバックアップはサービス事業者の侵害やアカウント凍結のリスクに晒される。
+
+従来のShamirの秘密分散法（Shamir's Secret Sharing: SSS）をそのまま紙に印刷するアプローチでは、鍵全体のサイズが大きくなるほどQRコードのバージョン（セル密度）が高くなり、印刷の潰れや読み取りエラーのリスクが跳ね上がる。
+本研究が提案する「HQSS（Hybrid QR Secret Splitter）」は、\textbf{パブリッククラウドを「無害な大容量断片の保管庫」}として割り切り、\textbf{物理QRコードを「インデックスと解錠用の極小キー」}として機能させるハイブリッドアプローチである。
+\else
+The persistent backup of master asymmetric private keys (such as GnuPG/OpenPGP keys or cryptocurrency recovery seeds) has traditionally involved a fundamental trade-off. Physical offline media (paper wallets, metal seed plates) suffer from environmental degradation, spatial constraints, and high QR density risks. Conversely, cloud-hosted encrypted backups remain vulnerable to credential theft, account termination, and provider lock-in.
+
+Standard implementations of threshold cryptography, such as Shamir's Secret Sharing (SSS), directly encode all key data across multiple physical artifacts. As key lengths and subkeys grow, the required QR code versions scale up, severely increasing read error rates during scanning. The Hybrid QR Secret Splitter (HQSS) circumvents this constraint by conceptualizing \textbf{public cloud infrastructure as an untrusted bulk store for blind ciphertext fragments}, while reducing the \textbf{physical QR tokens to minimal locators and partial-key fragments}.
+\fi
+
+\section{%
+  \ifja 2. アーキテクチャとプロトコル仕様 \else 2. Architecture and Protocol Specification \fi
+}
+
+\subsection{%
+  \ifja 2.1 パッケージングおよび分割フェーズ \else 2.1 Packaging and Fragmentation Phase \fi
+}
+\ifja
+元の機密データ（秘密鍵平文 $M$）から公開断片および物理QRコードを生成する処理手順は以下の通りである。
+\begin{enumerate}
+  \item \textbf{暗号化:} パスフレーズ $P$ からArgon2id等の強固な鍵導出関数（KDF）を用いて対称鍵 $K$ を生成し、$M$ をAES-256-GCMにより暗号化して暗号文 $C$ を得る。
+  \item \textbf{一次スライス:} $C$ を $N$ 個（典型例では $N=5$）の断片 $\{P_1, P_2, \dots, P_N\}$ に分割する。
+  \item \textbf{パブリッククラウド配置:} $P_1$ から $P_{N-1}$（計4個）を、アクセス制限のない公開オブジェクトストレージ（Google Drive, Cloudflare R2, S3等）に配置し、ダイレクトURL $\{U_1, U_2, U_3, U_4\}$ を取得する。
+  \item \textbf{手元断片の二次分割:} 残された1つの断片 $P_N$ をBase64変換後、2つの半片 $P_{N,a}$ および $P_{N,b}$ に分割する。
+  \item \textbf{QRコードの生成:} 静的Web復元ツールのURL末尾に、RFC 3986準拠のURIフラグメント識別子（\texttt{\#}以降）として各要素を格納する。
+\end{enumerate}
+\else
+The provisioning pipeline from the plaintext private key $M$ to distributed assets is formalized as follows:
+\begin{enumerate}
+  \item \textbf{Symmetric Encryption:} Derive key $K$ from passphrase $P$ using Argon2id. Encrypt $M$ using AES-256-GCM to yield authenticated ciphertext $C$.
+  \item \textbf{Primary Partitioning:} Slice ciphertext $C$ into $N$ deterministic fragments $\{P_1, P_2, \dots, P_N\}$, where $N=5$ in the standard deployment.
+  \item \textbf{Public Cloud Dispersion:} Upload fragments $\{P_1, \dots, P_{N-1}\}$ to publicly readable endpoints (e.g., Google Drive, Cloudflare R2, AWS S3), acquiring direct HTTP download locators $\{U_1, U_2, U_3, U_4\}$.
+  \item \textbf{Local Share Segmentation:} Base64-encode $P_N$ and segment it into two complementary substrings: $P_{N,a}$ and $P_{N,b}$.
+  \item \textbf{QR Artifact Construction:} Embed payloads into URL hash fragments targeting a static restoration web client.
+\end{enumerate}
+\fi
+
+\begin{lstlisting}[language=bash, caption={Payload Structures in URI Fragments}]
+QR_1: https://restore.example.org/#part=1&u1=<URL_1>&u2=<URL_2>&k=<P_N,a>
+QR_2: https://restore.example.org/#part=2&u3=<URL_3>&u4=<URL_4>&k=<P_N,b>
+\end{lstlisting}
+
+\subsection{%
+  \ifja 2.2 クライアント完結型の復元フェーズ \else 2.2 Client-Side Reconstruction Phase \fi
+}
+\ifja
+復元処理は、専用ソフトウェアのインストールを必要とせず、一般的なスマートフォンのカメラアプリとWeb標準APIのみで実行される。
+\begin{itemize}
+  \item \textbf{ステップ 1 (第1スキャン):} ユーザーがQR 1を読み取ると、ブラウザが起動しURLフラグメントをパースする。$U_1, U_2$ に対するCORS非同期Fetchを実行し、$P_1, P_2, P_{N,a}$ を一時メモリストレージにバッファリングする。
+  \item \textbf{ステップ 2 (第2スキャン):} ユーザーがQR 2を読み取ると、同様に $U_3, U_4$ から $P_3, P_4$ を回収し、$P_{N,b}$ を取得する。
+  \item \textbf{ステップ 3 (結合と復号):} $P_{N,a}$ と $P_{N,b}$ を連結して $P_N$ を再生。全断片 $P_1 \mathbin{\Vert} \dots \mathbin{\Vert} P_N$ を連結して完全な暗号文 $C$ を構築する。Web Crypto APIを用いてパスフレーズ $P$ によるGCM検証付き復号を行い、秘密鍵平文 $M$ を出力する。
+\end{itemize}
+\else
+Reconstruction requires no external native software, operating strictly within standard mobile web environments via standard Web APIs:
+\begin{itemize}
+  \item \textbf{Scan Sequence 1:} Reading QR 1 launches the client. JavaScript parses the hash parameters, asynchronously fetches $P_1, P_2$ via CORS from $U_1, U_2$, and stores $\{P_1, P_2, P_{N,a}\}$ in browser session memory.
+  \item \textbf{Scan Sequence 2:} Reading QR 2 resolves $U_3, U_4$ to retrieve $P_3, P_4$, capturing substring $P_{N,b}$.
+  \item \textbf{Reassembly \& Decryption:} The runtime concatenates $P_{N,a} \mathbin{\Vert} P_{N,b}$ to yield $P_N$, and merges all shares $P_1 \mathbin{\Vert} \dots \mathbin{\Vert} P_N = C$. Web Crypto API executes AES-GCM verification and decryption with passphrase $P$, releasing $M$ into local blob memory for export.
+\end{itemize}
+\fi
+
+\section{%
+  \ifja 3. セキュリティおよび脅威モデル分析 \else 3. Security and Threat Model Analysis \fi
+}
+
+\begin{table}[htbp]
+\centering
+\caption{%
+  \ifja 脅威モデルと対抗措置の比較 \else Threat Matrix and Mitigation Profiles \fi
+}
+\vspace{0.5em}
+\begin{tabularx}{\textwidth}{lXX}
+\toprule
+\textbf{\ifja 脅威事象 \else Threat Vector \fi} & 
+\textbf{\ifja 影響・攻撃シナリオ \else Vector Impact \fi} & 
+\textbf{\ifja 本プロトコルの耐性と防御策 \else Protocol Defense / Mitigation \fi} \\
+\midrule
+\ifja クラウド断片の漏洩 \else Public Bucket Discovery \fi & 
+\ifja クラウド上の断片4つが全巡回収集される。 \else Adversary intercepts all 4 remote public fragments. \fi & 
+\ifja AES-GCM暗号文の一部かつ $P_N$ が欠落しており、暗号論的情報量はゼロ。 \else Zero plaintext leakage; missing $P_N$ and Argon2-derived key prevents attack. \fi \\
+\addlinespace
+\ifja 単一QRコードの紛失 \else QR Artifact Theft \fi & 
+\ifja QR 1枚が物理的に盗難・盗撮される。 \else Attacker acquires a single printed QR code. \fi & 
+\ifja クラウド断片の半数と $P_N$ の半分しかなく、復元不可能。 \else Insufficient shares to reconstruct $C$; requires passphrase $P$ regardless. \fi \\
+\addlinespace
+\ifja ログ盗聴・通信監視 \else Hosting Access Logging \fi & 
+\ifja ホスティング側がアクセスログから鍵断片を傍受。 \else Static web host attempts key harvesting via web logs. \fi & 
+\ifja RFC 3986によりフラグメント（\texttt{\#}以降）はHTTP要求に乗らない。 \else Fragments behind URI hash are strictly local and never transmitted over wire. \fi \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{%
+  \ifja 4. 課題と発展的拡張 \else 4. Limitations and Future Extensions \fi
+}
+\ifja
+単純なバイト分割（スライシング）を用いた場合、クラウド上のURLリンク切れ（404エラー）またはアカウント停止が発生すると、1つのパーツの喪失によって全体の復元が不可能となる可用性の弱点が存在する。
+
+実運用においては、単純分割の代わりに\textbf{Shamirの秘密分散法（SSS）}または\textbf{リード・ソロモン消去符号（Reed-Solomon Erasure Coding）}を適用することが極めて有効である。
+例えば「3-of-5」の閾値秘密分散を採用すれば、クラウド上のファイルが2つ消失したり、QRコードの片側に破損が生じた場合であっても、数学的にマスターキーを完全に再生することが可能となる。
+\else
+In its naive fragmentation formulation, a primary operational risk is service disruption: if any public hosting URL returns an HTTP 404 error or faces account termination, the loss of a single piece inhibits total reconstruction.
+
+To achieve robust fault tolerance, naive slicing should be replaced with \textbf{Shamir's Secret Sharing (SSS)} or \textbf{Reed-Solomon Erasure Coding}. Implementing an $(m, n)$ threshold scheme (e.g., 3-of-5 threshold) guarantees mathematical reconstructibility even if two cloud endpoints become unreachable or physical degradation damages one of the printed tokens.
+\fi
+
+\section{%
+  \ifja 5. 結論 \else 5. Conclusion \fi
+}
+\ifja
+本モノグラフで提案したHQSSプロトコルは、大容量公開クラウドを実質的な「ストレージメモリ」として使い捨て、手元にはURI参照と極小の暗号断片のみを低密度QRコードとして残すという新しい非対称保管アーキテクチャを確立した。
+Webブラウザの標準仕様（RFC 3986 URIフラグメントおよびWeb Crypto API）を巧みに組み合わせることで、完全ゼロ知識かつスマートフォン操作だけで完結する極めて洗練された秘密鍵復旧体験を実現できる。
+\else
+The HQSS protocol presented in this monograph demonstrates an asymmetric storage paradigm: leveraging untrusted public cloud infrastructure as distributed raw memory, while shrinking physical tokens into low-density, fault-resilient QR reference cards. By compounding established browser standards (RFC 3986 URI hash fragments and the Web Crypto API), HQSS delivers a seamless, zero-knowledge, zero-install emergency recovery framework for cryptographic identities.
+\fi
+
+\end{document}
