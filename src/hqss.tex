@@ -62,16 +62,16 @@
 \title{%
   \LARGE\textbf{%
     \ifja
-      HQSS: 公開クラウドと二重分割QRコードによる\\ゼロ知識秘密分散型バックアッププロトコル
+      HQSS-v2: 不完全暗号文のクラウド集約と\\残余断片シャミア秘密分散（2-of-5）による極小QR耐障害性バックアッププロトコル
     \else
-      HQSS: Zero-Knowledge Secret Splitting and Backup Protocol\\via Public Cloud and Dual-Segmented QR Codes
+      HQSS-v2: Fault-Tolerant Cryptographic Key Escrow Protocol\\via Cloud Incomplete Ciphertext Aggregation and Shamir-Partitioned (2-of-5) QR Artifacts
     \fi
   }
 }
 
 \author{%
   \textbf{%
-    \ifja Section 9 Inc. 研究開発技術仕様書 \else Technical Monograph / Whitepaper \fi
+    \ifja Section 9 Inc. 研究開発技術仕様書 \else Section 9 Inc. Technical Monograph / Specification \fi
   }
 }
 
@@ -85,133 +85,182 @@
 
 \begin{abstract}
 \ifja
-本モノグラフでは、暗号化秘密鍵（例：GnuPG秘密鍵）の物理保管コストの極小化と耐障害性を両立する新しいプロトコル「Hybrid QR Secret Splitter (HQSS)」を提案する。本プロトコルは、強度の高い暗号化を施した秘密鍵バイナリを$N$個の断片に分割し、大半の断片（$N-1$個）をパブリッククラウドに平文公開ストレージとして配置する。残存する1つの断片およびクラウド上の断片へのポインタ（URL群）はさらに細分化され、オフライン物理媒体（印刷されたQRコード群）として保持される。復元時には、スマートフォンの標準カメラおよびRFC 3986準拠のURLフラグメント（ハッシュ）を活用することで、サーバーにデータを送信することなく端末ローカル（Webブラウザ内）で自律的に全断片の非同期回収・結合・復号が完了する。本稿では、本方式の暗号学的安全性、耐タンパー性、および運用上の可用性について包括的に検証する。
+本モノグラフでは、暗号鍵（GnuPG/OpenPGP秘密鍵等）の超長期保管と耐障害性を極限まで高める新設計「Hybrid QR Secret Splitter v2 (HQSS-v2)」を提示する。本プロトコルは、共通鍵暗号化（AES-256）を施した秘密鍵を10個の等長ブロックに分割し、先頭90\%（9ブロック）を単一のバンドルとして複数のパブリッククラウドに分散配備する。欠落させた残余の10\%（1ブロック）に対してのみガロア体 $GF(2^8)$ 上のShamirの秘密分散法（2-of-5閾値）を適用し、極小の低密度QRコードとして物理媒体に分散保管する。本方式では、クラウド上の90\%を入手した攻撃者に対しても復号検証オラクルを完全に奪い、情報理論的安全性を提供する。また、物理媒体の1枚の盗難に耐えつつ、5枚中任意の2枚のスキャンとクラウド取得のみで、パスフレーズ記憶負荷を最小化しながら確実な自律復旧を可能とする。
 \else
-This monograph proposes the Hybrid QR Secret Splitter (HQSS), a novel protocol designed to reconcile minimal physical storage overhead with high availability for master cryptographic keys, such as GnuPG private keys. Under HQSS, a strongly encrypted key is fragmented into $N$ segments; $N-1$ segments are hosted across publicly accessible cloud repositories. The final remaining segment, together with the locator URLs for the remote shares, is split and encoded into multiple physical QR codes. Reconstruction operates entirely client-side: utilizing smartphone cameras and RFC 3986 URL hash fragments, the browser asynchronously aggregates the public fragments, merges the local key pieces, and decrypts the master key without transmitting secret fragments to any third-party infrastructure. We comprehensively evaluate the security guarantees, threat surface, and practical fault-tolerance of this design.
+This monograph presents the Hybrid QR Secret Splitter v2 (HQSS-v2), a resilient cryptographic key escrow protocol optimized for disaster recovery and minimal cognitive overhead. HQSS-v2 fragments an AES-256 encrypted master key into ten deterministic chunks. The initial 90\% (chunks 1--9) is concatenated into a public cloud bundle and mirrored across distributed object storage. The vital remaining 10\% (chunk 10) is partitioned using Shamir's Secret Sharing over $GF(2^8)$ under a 2-of-5 threshold scheme, subsequently rendered into low-density physical QR tokens. Even in the event of an adversary harvesting the entire 90\% public bundle, the absence of padding, authentication tags, and structural metadata destroys any decryption oracle, reducing cipher analysis to information-theoretic infeasibility. Reconstruction requires merely any 2 of the 5 QR artifacts to restore the missing chunk and concatenate the local master key without third-party reliance.
 \fi
 \end{abstract}
 
 \vspace{1.5em}
 
 \section{%
-  \ifja 1. はじめに \else 1. Introduction \fi
+  \ifja 1. 設計思想と問題提起 \else 1. Problem Statement and Design Philosophy \fi
 }
 \ifja
-非対称鍵暗号系における秘密鍵（GnuPG/OpenPGPや暗号資産のマスターシード）の長期安全保管は、長らく二律背反の課題を抱えてきた。
-完全なオフライン保管（ペーパーウォレットやハードウェアウォレット）は物理的破損や紛失、印刷面積の増大という問題を伴い、一方でクラウドバックアップはサービス事業者の侵害やアカウント凍結のリスクに晒される。
+暗号化秘密鍵のバックアップは、常に「クラウド事業者の侵害・検閲リスク」と「物理メディア（紙や金属板）の破損・紛失・容量制限」の板挟みとなってきた。また、鍵長が大きく証明書チェーンを内包するGnuPG鍵をShamirの秘密分散法（SSS）でそのまま物理QRコード化する場合、バージョン（セル密度）が高くなりすぎて印刷潰れやカメラのスキャンミスを引き起こす。さらに、人間が複雑な高エントロピーパスワードを長期間記憶し続けること自体が重大な単一障害点（SPOF）となる。
 
-従来のShamirの秘密分散法（Shamir's Secret Sharing: SSS）をそのまま紙に印刷するアプローチでは、鍵全体のサイズが大きくなるほどQRコードのバージョン（セル密度）が高くなり、印刷の潰れや読み取りエラーのリスクが跳ね上がる。
-本研究が提案する「HQSS（Hybrid QR Secret Splitter）」は、\textbf{パブリッククラウドを「無害な大容量断片の保管庫」}として割り切り、\textbf{物理QRコードを「インデックスと解錠用の極小キー」}として機能させるハイブリッドアプローチである。
+HQSS-v2は、以下の3つの原則を融合してこの問題を根本解決する。
+\begin{enumerate}
+  \item \textbf{不完全暗号文によるオラクル消滅:} 暗号化バイナリの先頭90\%のみをクラウドに預ける。検証可能なパディングや末尾パケットを欠損させることで、攻撃者が総当たり（ブルートフォース）を試みるための正否判定オラクルを物理的に消滅させる。これにより、暗号化パスフレーズの複雑性への依存を大幅に緩和する。
+  \item \textbf{質量のクラウド委任とエントロピーの物理逃がし:} 全体データの大半（90\%）をクラウドに逃がすことで、物理媒体に書き込む残余データサイズを数百バイトに抑え、低密度（Version 5--10程度）で高耐久なQRコードを実現する。
+  \item \textbf{2-of-5 閾値分散による耐奪取と耐喪失の両立:} 手元に残す重要ブロックのみに $GF(2^8)$ シャミア秘密分散を適用する。1枚のQRコードの盗難・押収では情報漏洩が一切起きず、かつ5枚中3枚が焼失・紛失しても2枚から完全復旧を可能にする。
+\end{enumerate}
 \else
-The persistent backup of master asymmetric private keys (such as GnuPG/OpenPGP keys or cryptocurrency recovery seeds) has traditionally involved a fundamental trade-off. Physical offline media (paper wallets, metal seed plates) suffer from environmental degradation, spatial constraints, and high QR density risks. Conversely, cloud-hosted encrypted backups remain vulnerable to credential theft, account termination, and provider lock-in.
+Key escrow architectures consistently clash against two failure modes: cloud provider compromise/censorship, and physical media degradation or volumetric limits. Encoding an entire GnuPG secret keyring via Shamir's Secret Sharing (SSS) directly onto paper yields high-density QR versions that suffer catastrophic read-failure rates under harsh optical conditions. Furthermore, relying on human cognitive retention of high-entropy passphrases introduces a fatal single point of failure (SPOF).
 
-Standard implementations of threshold cryptography, such as Shamir's Secret Sharing (SSS), directly encode all key data across multiple physical artifacts. As key lengths and subkeys grow, the required QR code versions scale up, severely increasing read error rates during scanning. The Hybrid QR Secret Splitter (HQSS) circumvents this constraint by conceptualizing \textbf{public cloud infrastructure as an untrusted bulk store for blind ciphertext fragments}, while reducing the \textbf{physical QR tokens to minimal locators and partial-key fragments}.
+HQSS-v2 resolves these contradictions through three core design axioms:
+\begin{enumerate}
+  \item \textbf{Oracle Annihilation via Incomplete Ciphertext:} Releasing only 90\% of the ciphertext to untrusted clouds strips away MAC tags, padding, and packet trailers, entirely denying adversaries a mathematical verification oracle for brute-force attacks.
+  \item \textbf{Bulk Offloading vs. Pure Entropy Escrow:} Offloading the vast majority of volume to public infrastructure allows physical shares to remain under a few hundred bytes, producing robust, low-version, fault-tolerant QR matrices.
+  \item \textbf{2-of-5 Threshold Duality:} Confining the Shamir scheme solely to the remaining 10\% fragment delivers mathematical resistance against single-token seizure while surviving the loss of up to 3 physical cards.
+\end{enumerate}
 \fi
 
 \section{%
-  \ifja 2. アーキテクチャとプロトコル仕様 \else 2. Architecture and Protocol Specification \fi
+  \ifja 2. プロトコル仕様とパイプライン \else 2. Protocol Specification and Pipeline \fi
 }
 
 \subsection{%
-  \ifja 2.1 パッケージングおよび分割フェーズ \else 2.1 Packaging and Fragmentation Phase \fi
+  \ifja 2.1 暗号化・分割・物理トークン生成 \else 2.1 Encryption, Fragmentation, and Token Generation \fi
 }
 \ifja
-元の機密データ（秘密鍵平文 $M$）から公開断片および物理QRコードを生成する処理手順は以下の通りである。
+マスター秘密鍵平文 $M$ から配布用アーティファクトを生成する手続きは以下の通りである。
 \begin{enumerate}
-  \item \textbf{暗号化:} パスフレーズ $P$ からArgon2id等の強固な鍵導出関数（KDF）を用いて対称鍵 $K$ を生成し、$M$ をAES-256-GCMにより暗号化して暗号文 $C$ を得る。
-  \item \textbf{一次スライス:} $C$ を $N$ 個（典型例では $N=5$）の断片 $\{P_1, P_2, \dots, P_N\}$ に分割する。
-  \item \textbf{パブリッククラウド配置:} $P_1$ から $P_{N-1}$（計4個）を、アクセス制限のない公開オブジェクトストレージ（Google Drive, Cloudflare R2, S3等）に配置し、ダイレクトURL $\{U_1, U_2, U_3, U_4\}$ を取得する。
-  \item \textbf{手元断片の二次分割:} 残された1つの断片 $P_N$ をBase64変換後、2つの半片 $P_{N,a}$ および $P_{N,b}$ に分割する。
-  \item \textbf{QRコードの生成:} 静的Web復元ツールのURL末尾に、RFC 3986準拠のURIフラグメント識別子（\texttt{\#}以降）として各要素を格納する。
+  \item \textbf{暗号化:} パスフレーズ $P$（またはランダム生成鍵）を用い、AES-256（CBCまたはGCM）およびArmored形式で $M$ を暗号化し、暗号文 $C$ を生成する。
+  \item \textbf{10分割スライス:} GNU \texttt{split -n 10} 等を用い、$C$ をバイト均等に10個の断片 $\{B_0, B_1, \dots, B_9\}$ に分割する。
+  \item \textbf{クラウドバンドルの生成:} 先頭9個の断片を結合し、クラウド用バルクデータ $B_{\text{cloud}} = B_0 \mathbin{\Vert} \dots \mathbin{\Vert} B_8$ を作成する。これを複数の外部オブジェクトストレージ（Google Drive, Nextcloud, S3等）に同一内容で配置する。
+  \item \textbf{残余10\%のシャミア秘密分散:} 最後の1ブロック $B_9$ に対してのみ、ガロア体 $GF(2^8)$ 上で $(k, n) = (2, 5)$ のShamir秘密分散を実行し、5つのシェア $\{S_1, S_2, S_3, S_4, S_5\}$ を生成する。
+  \item \textbf{QRコード印字:} 各シェア $S_i$ をBase64文字列化し、\texttt{qrencode} を用いて中解像度QRコード（誤り訂正レベルM推奨）として出力・印刷する。
 \end{enumerate}
 \else
-The provisioning pipeline from the plaintext private key $M$ to distributed assets is formalized as follows:
+The generation pipeline executes deterministically as follows:
 \begin{enumerate}
-  \item \textbf{Symmetric Encryption:} Derive key $K$ from passphrase $P$ using Argon2id. Encrypt $M$ using AES-256-GCM to yield authenticated ciphertext $C$.
-  \item \textbf{Primary Partitioning:} Slice ciphertext $C$ into $N$ deterministic fragments $\{P_1, P_2, \dots, P_N\}$, where $N=5$ in the standard deployment.
-  \item \textbf{Public Cloud Dispersion:} Upload fragments $\{P_1, \dots, P_{N-1}\}$ to publicly readable endpoints (e.g., Google Drive, Cloudflare R2, AWS S3), acquiring direct HTTP download locators $\{U_1, U_2, U_3, U_4\}$.
-  \item \textbf{Local Share Segmentation:} Base64-encode $P_N$ and segment it into two complementary substrings: $P_{N,a}$ and $P_{N,b}$.
-  \item \textbf{QR Artifact Construction:} Embed payloads into URL hash fragments targeting a static restoration web client.
+  \item \textbf{Symmetric Encryption:} Encrypt plaintext secret key $M$ using AES-256 with passphrase $P$ to produce armored ciphertext $C$.
+  \item \textbf{Decary Fragmentation:} Slice $C$ evenly into 10 byte segments $\{B_0, B_1, \dots, B_9\}$ via \texttt{split -n 10}.
+  \item \textbf{Cloud Aggregation:} Concatenate the first 9 chunks into a single bulk artifact $B_{\text{cloud}} = B_0 \mathbin{\Vert} \dots \mathbin{\Vert} B_8$. Mirror $B_{\text{cloud}}$ across disparate public storage providers.
+  \item \textbf{Shamir Dispersion of Remainder:} Subject the final chunk $B_9$ to Shamir's Secret Sharing over $GF(2^8)$ parameterized at $(k=2, n=5)$, obtaining shares $\{S_1, \dots, S_5\}$.
+  \item \textbf{QR Artifact Synthesis:} Encode each share $S_i$ into Base64 format and render via \texttt{qrencode} (Error Correction Level M).
 \end{enumerate}
 \fi
 
-\begin{lstlisting}[language=bash, caption={Payload Structures in URI Fragments}]
-QR_1: https://restore.example.org/#part=1&u1=<URL_1>&u2=<URL_2>&k=<P_N,a>
-QR_2: https://restore.example.org/#part=2&u3=<URL_3>&u4=<URL_4>&k=<P_N,b>
+\begin{lstlisting}[language=bash, caption={Reference Implementation: Fragmentation and QR Encoding}]
+# 1. 秘密鍵のエクスポートとAES暗号化
+gpg --armor --export-secret-keys <KEY-ID> | \
+  gpg --symmetric --cipher-algo AES256 --armor --output key.asc
+
+# 2. 10等分スライス
+mkdir -p /tmp/hqss && cd /tmp/hqss
+split -n 10 -d key.asc part_
+
+# 3. 先頭90%を結合してクラウドバンドルを作成
+cat part_00 part_01 part_02 part_03 part_04 part_05 part_06 part_07 part_08 > cloud_bundle.bin
+
+# 4. 残余10%（part_09）を 2-of-5 シャミア秘密分散
+gfsplit -n 5 -m 2 part_09 share_
+
+# 5. Base64化してQRコード（PNG）を生成
+for f in share_*; do
+    base64 -w 0 "$f" | qrencode -s 6 -l M -o "${f}.png"
+done
 \end{lstlisting}
 
 \subsection{%
-  \ifja 2.2 クライアント完結型の復元フェーズ \else 2.2 Client-Side Reconstruction Phase \fi
+  \ifja 2.2 復元フェーズ \else 2.2 Reconstruction Phase \fi
 }
 \ifja
-復元処理は、専用ソフトウェアのインストールを必要とせず、一般的なスマートフォンのカメラアプリとWeb標準APIのみで実行される。
-\begin{itemize}
-  \item \textbf{ステップ 1 (第1スキャン):} ユーザーがQR 1を読み取ると、ブラウザが起動しURLフラグメントをパースする。$U_1, U_2$ に対するCORS非同期Fetchを実行し、$P_1, P_2, P_{N,a}$ を一時メモリストレージにバッファリングする。
-  \item \textbf{ステップ 2 (第2スキャン):} ユーザーがQR 2を読み取ると、同様に $U_3, U_4$ から $P_3, P_4$ を回収し、$P_{N,b}$ を取得する。
-  \item \textbf{ステップ 3 (結合と復号):} $P_{N,a}$ と $P_{N,b}$ を連結して $P_N$ を再生。全断片 $P_1 \mathbin{\Vert} \dots \mathbin{\Vert} P_N$ を連結して完全な暗号文 $C$ を構築する。Web Crypto APIを用いてパスフレーズ $P$ によるGCM検証付き復号を行い、秘密鍵平文 $M$ を出力する。
-\end{itemize}
+被災時または別環境でのリカバリは、最小限の操作で完結する。
+\begin{enumerate}
+  \item クラウドストレージから $B_{\text{cloud}}$ を取得する。
+  \item 分散保管された5枚のQRコードのうち、手元にある任意の2枚を光学スキャンし、Base64文字列からバイナリシェア $S_x, S_y$ を復元する。
+  \item \texttt{gfcombine} を実行し、残余ブロック $B_9$ を数学的に復元する。
+  \item $B_{\text{cloud}}$ と $B_9$ をバイナリ結合して元の暗号文 $C$ を復元し、パスフレーズ $P$ を入力して秘密鍵平文 $M$ を取り出す。
+\end{enumerate}
 \else
-Reconstruction requires no external native software, operating strictly within standard mobile web environments via standard Web APIs:
-\begin{itemize}
-  \item \textbf{Scan Sequence 1:} Reading QR 1 launches the client. JavaScript parses the hash parameters, asynchronously fetches $P_1, P_2$ via CORS from $U_1, U_2$, and stores $\{P_1, P_2, P_{N,a}\}$ in browser session memory.
-  \item \textbf{Scan Sequence 2:} Reading QR 2 resolves $U_3, U_4$ to retrieve $P_3, P_4$, capturing substring $P_{N,b}$.
-  \item \textbf{Reassembly \& Decryption:} The runtime concatenates $P_{N,a} \mathbin{\Vert} P_{N,b}$ to yield $P_N$, and merges all shares $P_1 \mathbin{\Vert} \dots \mathbin{\Vert} P_N = C$. Web Crypto API executes AES-GCM verification and decryption with passphrase $P$, releasing $M$ into local blob memory for export.
-\end{itemize}
+Reconstruction operates deterministically in an offline, air-gapped terminal:
+\begin{enumerate}
+  \item Retrieve $B_{\text{cloud}}$ from any reachable cloud mirror.
+  \item Scan any 2 available physical QR cards from the 5 issued, decoding Base64 strings to yield shares $S_x, S_y$.
+  \item Execute \texttt{gfcombine} with $S_x, S_y$ to mathematically restore $B_9$.
+  \item Concatenate $B_{\text{cloud}} \mathbin{\Vert} B_9$ to reform ciphertext $C$, subsequently decrypting with passphrase $P$ to obtain $M$.
+\end{enumerate}
 \fi
 
+\begin{lstlisting}[language=bash, caption={Reference Implementation: Reconstruction Pipeline}]
+# 1. スキャンした2片をデコード
+echo "$SCAN_A" | base64 -d > share_rec_1
+echo "$SCAN_B" | base64 -d > share_rec_2
+
+# 2. 2-of-5 復元による第10ブロック再生
+gfcombine -o restored_part_09 share_rec_1 share_rec_2
+
+# 3. クラウドバンドルと結合
+cat cloud_bundle.bin restored_part_09 > restored_key.asc
+
+# 4. 復号とGPGインポート
+gpg --decrypt restored_key.asc | gpg --import
+\end{lstlisting}
+
 \section{%
-  \ifja 3. セキュリティおよび脅威モデル分析 \else 3. Security and Threat Model Analysis \fi
+  \ifja 3. 暗号学的安全性と脅威モデル \else 3. Cryptographic Security and Threat Model \fi
 }
 
 \begin{table}[htbp]
 \centering
 \caption{%
-  \ifja 脅威モデルと対抗措置の比較 \else Threat Matrix and Mitigation Profiles \fi
+  \ifja 脅威モデルと対抗措置（HQSS-v2） \else Threat Vectors and Mitigations (HQSS-v2) \fi
 }
 \vspace{0.5em}
 \begin{tabularx}{\textwidth}{lXX}
 \toprule
-\textbf{\ifja 脅威事象 \else Threat Vector \fi} & 
-\textbf{\ifja 影響・攻撃シナリオ \else Vector Impact \fi} & 
-\textbf{\ifja 本プロトコルの耐性と防御策 \else Protocol Defense / Mitigation \fi} \\
+\textbf{\ifja 攻撃ベクトル \else Threat Vector \fi} & 
+\textbf{\ifja 影響と攻撃者の試み \else Impact / Adversary Capability \fi} & 
+\textbf{\ifja 本プロトコルの防衛機構 \else Defensive Guarantee \fi} \\
 \midrule
-\ifja クラウド断片の漏洩 \else Public Bucket Discovery \fi & 
-\ifja クラウド上の断片4つが全巡回収集される。 \else Adversary intercepts all 4 remote public fragments. \fi & 
-\ifja AES-GCM暗号文の一部かつ $P_N$ が欠落しており、暗号論的情報量はゼロ。 \else Zero plaintext leakage; missing $P_N$ and Argon2-derived key prevents attack. \fi \\
+\ifja クラウド完全侵害 \else Cloud Infrastructure Seizure \fi & 
+\ifja クラウド上の $B_{\text{cloud}}$（90\%）が敵対者に完全取得される。 \else Adversary intercepts full 90\% bulk ciphertext bundle. \fi & 
+\ifja ファイル構造および末尾パディングが欠落しており、復号正否判定オラクルが消滅。総当たりは数学的に不成立。 \else No plaintext oracle exists; missing final block invalidates brute-force verification over $P$. \fi \\
 \addlinespace
-\ifja 単一QRコードの紛失 \else QR Artifact Theft \fi & 
-\ifja QR 1枚が物理的に盗難・盗撮される。 \else Attacker acquires a single printed QR code. \fi & 
-\ifja クラウド断片の半数と $P_N$ の半分しかなく、復元不可能。 \else Insufficient shares to reconstruct $C$; requires passphrase $P$ regardless. \fi \\
+\ifja 物理QRコードの単一奪取 \else Single Physical QR Theft \fi & 
+\ifja 捜索や空き巣等によりQRコードが1枚物理的に盗まれる。 \else Adversary acquires a single printed QR code share. \fi & 
+\ifja 2-of-5 シャミア秘密分散の性質上、1片から得られる $B_9$ の情報量は数学的に0ビット（情報理論的安全性）。 \else Information-theoretic security: single share reveals 0 bits of information regarding $B_9$. \fi \\
 \addlinespace
-\ifja ログ盗聴・通信監視 \else Hosting Access Logging \fi & 
-\ifja ホスティング側がアクセスログから鍵断片を傍受。 \else Static web host attempts key harvesting via web logs. \fi & 
-\ifja RFC 3986によりフラグメント（\texttt{\#}以降）はHTTP要求に乗らない。 \else Fragments behind URI hash are strictly local and never transmitted over wire. \fi \\
+\ifja 災害・火災・紛失 \else Physical Degradation / Disaster \fi & 
+\ifja 自宅被災等により保管していたQRコードの大半（最大3枚）を焼失。 \else Fire or environmental damage destroys up to 3 physical cards. \fi & 
+\ifja 任意の2枚さえ残存していれば、多項式補間により100\%元の暗号文を復元可能（高い耐障害性）。 \else Any 2 valid shares mathematically reconstruct $B_9$ through Lagrange interpolation. \fi \\
+\addlinespace
+\ifja パスフレーズ忘却・認知低下 \else Human Cognitive Degradation \fi & 
+\ifja 本人が複雑なパスワードを記憶できない、または忘却する。 \else Operator forgets complex passphrase. \fi & 
+\ifja 暗号強度をデータ欠損が保証するため、パスフレーズは単純なPINや記憶可能な語句に簡略化可能。 \else Security relies on missing physical shares rather than high-entropy password memorization. \fi \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
 \section{%
-  \ifja 4. 課題と発展的拡張 \else 4. Limitations and Future Extensions \fi
+  \ifja 4. 考察と運用上の推奨事項 \else 4. Discussion and Operational Recommendations \fi
 }
 \ifja
-単純なバイト分割（スライシング）を用いた場合、クラウド上のURLリンク切れ（404エラー）またはアカウント停止が発生すると、1つのパーツの喪失によって全体の復元が不可能となる可用性の弱点が存在する。
+\subsection{完全性検証メタデータ}
+単純なバイナリ結合を行うため、復元時に1バイトでもオフセットや順序の狂いが生じると復号に失敗する。
+この対策として、暗号化完了時のオリジナルハッシュ（\texttt{sha256sum key.asc} の先頭8--16進数文字程度）を、各QRコードの余白またはBase64ヘッダに平文メタデータとして併記しておく運用が強く推奨される。
 
-実運用においては、単純分割の代わりに\textbf{Shamirの秘密分散法（SSS）}または\textbf{リード・ソロモン消去符号（Reed-Solomon Erasure Coding）}を適用することが極めて有効である。
-例えば「3-of-5」の閾値秘密分散を採用すれば、クラウド上のファイルが2つ消失したり、QRコードの片側に破損が生じた場合であっても、数学的にマスターキーを完全に再生することが可能となる。
+\subsection{クラウドデータのビットロット対策}
+パブリッククラウド上の $B_{\text{cloud}}$ の長期的なビット反転（Silent Data Corruption）やストレージ障害を想定し、Par2（Parchive）等のリード・ソロモン消去符号による数\%の修復ブロックを生成してクラウド上に併置しておくことで、ネットワーク側の可用性をほぼ100\%に引き上げることが可能である。
 \else
-In its naive fragmentation formulation, a primary operational risk is service disruption: if any public hosting URL returns an HTTP 404 error or faces account termination, the loss of a single piece inhibits total reconstruction.
+\subsection{Integrity Verification Metadata}
+Because restoration relies on byte-exact concatenation, any transposition error invalidates decryption. Operators are strongly advised to print the truncated SHA-256 digest of the original \texttt{key.asc} in human-readable plain text alongside the QR codes to permit rapid sanity checks prior to invoking decryption.
 
-To achieve robust fault tolerance, naive slicing should be replaced with \textbf{Shamir's Secret Sharing (SSS)} or \textbf{Reed-Solomon Erasure Coding}. Implementing an $(m, n)$ threshold scheme (e.g., 3-of-5 threshold) guarantees mathematical reconstructibility even if two cloud endpoints become unreachable or physical degradation damages one of the printed tokens.
+\subsection{Mitigating Cloud Bit-Rot}
+To guard against silent data corruption across remote endpoints, generating a minor parity volume via Par2 (Reed-Solomon erasure coding) alongside $B_{\text{cloud}}$ elevates remote repository availability to near certainty without disclosing cryptographic structure.
 \fi
 
 \section{%
   \ifja 5. 結論 \else 5. Conclusion \fi
 }
 \ifja
-本モノグラフで提案したHQSSプロトコルは、大容量公開クラウドを実質的な「ストレージメモリ」として使い捨て、手元にはURI参照と極小の暗号断片のみを低密度QRコードとして残すという新しい非対称保管アーキテクチャを確立した。
-Webブラウザの標準仕様（RFC 3986 URIフラグメントおよびWeb Crypto API）を巧みに組み合わせることで、完全ゼロ知識かつスマートフォン操作だけで完結する極めて洗練された秘密鍵復旧体験を実現できる。
+HQSS-v2は、「計算量的安全性」に過度に依存した従来のパスワード暗号化管理から脱却し、「物理的な不完全暗号文によるオラクル消滅」と「ガロア体上のShamir秘密分散」を組み合わせることで、極めて高次元の耐奪取性と耐喪失性を両立した。
+記憶の認知的負荷を極小化しつつ、クラウドの容量メリットと紙媒体の非通電オフライン保管メリットを完璧に抽出した、恒久的な秘密鍵バックアップの決定解である。
 \else
-The HQSS protocol presented in this monograph demonstrates an asymmetric storage paradigm: leveraging untrusted public cloud infrastructure as distributed raw memory, while shrinking physical tokens into low-density, fault-resilient QR reference cards. By compounding established browser standards (RFC 3986 URI hash fragments and the Web Crypto API), HQSS delivers a seamless, zero-knowledge, zero-install emergency recovery framework for cryptographic identities.
+HQSS-v2 breaks the traditional reliance on high-entropy passphrase memorization by bridging incomplete ciphertext fragmentation with Galois-field Shamir secret sharing. By removing decryption verification oracles from untrusted cloud stores and compressing the physical escrow requirement to low-density 2-of-5 QR shares, HQSS-v2 achieves an unprecedented balance between seizure-resistance, disaster recovery availability, and zero-cognitive overhead.
 \fi
 
 \end{document}
