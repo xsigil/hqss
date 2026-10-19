@@ -289,4 +289,33 @@ HQSS-v4は、不完全暗号文によるオラクル消滅理論を究極まで�
 HQSS-v4 elevates incomplete ciphertext key escrow to its definitive form by unifying bulk trailing CSPRNG salt masking with a deterministic 4-byte footer architecture. While strictly preserving perfect secrecy over untrusted public cloud infrastructure, physical QR payloads are reduced to their absolute mathematical lower bound ($M_9 \mathbin{\Vert} \text{uint32\_be}(L_{\text{salt}})$). This dramatic payload reduction maximizes optical scanning tolerance and material resilience during fiber laser engraving and sulfur blackening on Sterling Silver and stainless steel tokens, establishing an uncompromising standard for offline-first, disaster-proof key custody.
 \fi
 
+
+\section{%
+  \ifja 4. 結論 \else 4. Conclusion \fi
+}
+\ifja
+HQSS-v4は、不完全暗号文による復号オラクル消滅理論を究極まで推し進め、「単一末尾可変長ソルトマスキング」と「ソルト実体破棄による極小ペイロード化」を融合させることで、クラウドストレージ単体に対する完全な情報理論的安全性を確立した。
+ソルト実体を物理側に保持せず、オフセット長（4バイト）のみを第10ブロック $M_9$ と共にShamir秘密分散へ逃がす設計により、物理QRコードのセル密度を極限まで低減させることに成功した。
+「忘却しやすいパスワード」や「クラウド事業者の誠実性」に一切依存せず、最小限の物理低密度QRコードのみで世界規模の災害から重要鍵を蘇生させる、オフラインファースト時代の決定的な鍵保管プロトコルである。
+\else
+HQSS-v4 elevates incomplete ciphertext escrow into unconditional information-theoretic perfection by synthesizing single-tail ephemeral salt masking with zero-storage salt reconstruction. By withholding the unmasking offset and chunk $M_9$ within a Shamir threshold container, physical QR density is radically minimized while preserving unconditional resilience against cloud compromise and heuristic verification oracles. HQSS-v4 establishes the definitive, offline-first standard for catastrophic disaster recovery.
+\fi
+
+\section*{%
+  \ifja 公式物理ハードウェアトークン \else Official Physical Hardware Artifacts \fi
+}
+\ifja
+本プロトコル仕様が要求する超低密度QRコードの光学的読取信頼性、および1000℃超の火災・水害・経年腐食への耐性を担保するため、純銀（Silver 925）および鍛造ステンレス（SUS304）にファイバーレーザー深彫り・硫黄黒化加工を施した公式エスクロー・インゴット規格を策定している。
+仕様・先行配備ロットの詳細は公式ポータルを参照のこと：
+\begin{center}
+  \url{https://monolith-id.com/}
+\end{center}
+\else
+To ensure optimal optical scanning reliability of the ultra-low-density QR shares and absolute physical survivability against fire (>1000$^\circ$C), flooding, and environmental decay, the reference hardware specifications for deep fiber-laser engraved Silver 925 and forged SUS304 steel ingots are maintained by Section 9 Inc.
+For technical details and priority deployment allocations, refer to the official repository portal:
+\begin{center}
+  \url{https://monolith-id.com/}
+\end{center}
+\fi
+
 \end{document}
