@@ -2,17 +2,33 @@
 
 [English](#overview) | [日本語](#概要)
 
-A technical monograph on the **Hybrid QR Secret Sharing (HQSS)** architecture — a disaster-resilient backup protocol combining public cloud hosting with split QR tokens.
+A technical monograph and reference implementation of the **Hybrid QR Secret Sharing v4 (HQSS-v4)** architecture — an information-theoretic, disaster-resilient cold-storage key escrow protocol combining untrusted public cloud storage with ultra-low-density physical QR tokens.
 
 ---
 
 ## Overview
 
-HQSS provides a cold-storage backup and recovery scheme for high-value secrets (e.g., GnuPG private keys, master recovery seeds) without trusting third-party cloud infrastructure.
+HQSS-v4 provides an unconditional information-theoretic key escrow scheme for critical cryptographic material (e.g., LUKS master keys, GnuPG private keys, master recovery seeds) without trusting public cloud providers.
 
-- **Storage Optimization:** Large encrypted ciphertext blocks are split and hosted across arbitrary public endpoints (e.g., public Google Drive shares, IPFS, GitHub).
-- **Physical Keys (QR):** Minimal decryption metadata, fetch URLs, and the final key fragment are compressed and encoded into physical QR codes.
-- **Client-Side Recovery:** Scanning the QR codes loads the orchestrator locally (using URL hash fragments), fetches public fragments, and decrypts the secret entirely inside the browser/local environment without exposing keys to intermediate servers.
+### Key Pillars of HQSS-v4
+- **Single-Tail Ephemeral Salt Masking:** Chunks $M_0 \sim M_8$ (90% of the AES-256 ciphertext) are aggregated and padded with a trailing CSPRNG random salt (0--4095 bytes). The cloud payload ($B_{\text{cloud}}$) is reduced to pure statistical white noise devoid of file signatures and OpenPGP tags.
+- **Oracle Annihilation:** With the final 10% chunk ($M_9$) physically withheld, trial decryption oracles (padding verification, HMAC/GCM authentication tags) are mathematically eliminated, neutralizing brute-force and heuristic stripping attacks.
+- **Ultra-Low-Density QR Tokens:** Salt entropy is discarded rather than retained. The physical core payload requires only $M_9$ and a 4-byte uint32 salt-length footer, resulting in ultra-low-density QR codes engineered specifically for fiber-laser deep engraving on precious metal plates (Silver 925 / SUS304).
+- **Consolidated Shamir Thresholding (2-of-5):** Core payloads are dispersed using Shamir's Secret Sharing over $GF(2^8)$ via `gfsplit`/`gfcombine`. Any 2 surviving physical tokens can completely resurrect the master key offline.
+
+---
+
+## 概要
+
+**Hybrid QR Secret Sharing v4 (HQSS-v4)** のアーキテクチャおよびプロトコル仕様をまとめた技術モノグラフとリファレンス実装です。信頼できないパブリッククラウドと、貴金属（シルバー925）やステンレスへの刻印に最適化した物理QRトークンを組み合わせることで、情報理論的安全性を満たすコールドバックアップを実現します。
+
+### HQSS-v4 の中核アーキテクチャ
+- **単一末尾ソルトマスキングと白色雑音化:** 暗号文の先頭90%（$M_0 \sim M_8$）を一括結合した末尾に $0 \sim 4095$ バイトのCSPRNG乱数ソルトを注入。クラウド保管データはファイルヘッダや統計的シグネチャを完全に喪失した白色雑音へ同化します。
+- **復号判定オラクルの完全消滅:** 末尾10%（$M_9$）を物理世界へ隔離することでパディングや認証タグが失われ、クラウド全量押収時でも総当たり検証オラクルが数学的に成立しません。
+- **ソルト実体破棄によるQR超低密度化:** 復元に必要な情報はソルトの「長さ（オフセット）」のみであるため、ソルト実体を手元に保持する仕様を撤廃。手元のコアペイロードは「$M_9$ ＋ 4バイトのLENGTHフッター」のみとなり、金属彫刻に耐えうる極小密度のQRコードを出力します。
+- **多項式補間による災害耐性 (2-of-5):** コアペイロードをガロア体 $GF(2^8)$ 上のシャミア秘密分散（`gfsplit` / `gfcombine`）で5枚に分散。任意の2枚さえ回収できれば、火災や倒壊後でもオフライン環境で即座に鍵を再生できます。
+
+---
 
 ## Building the Documents
 
@@ -22,6 +38,8 @@ The monograph is authored in LuaLaTeX and supports bilingual compilation (Japane
 
 - LuaLaTeX (`lualatex`)
 - `latexmk`
+- `libgfshare-bin` (`gfsplit`, `gfcombine`)
+- `qrencode`
 - Fonts: `Noto Serif`, `Noto Sans`, `Noto Sans Mono`, and `Noto Serif CJK JP`
 
 ### Build Targets
@@ -50,14 +68,14 @@ make distclean    # Removes the build directory
 
 ---
 
-## 概要
+## ライセンス / License
 
-**Hybrid QR Secret Sharing (HQSS)** のアーキテクチャおよびプロトコル仕様をまとめた技術モノグラフです。公開クラウドストレージと分割QRコードを組み合わせることで、可用性と秘匿性を両立したコールドバックアップを実現します。
+本プロジェクトは [MIT License](https://www.google.com/search?q=LICENSE) の下で公開されています。
 
-* **大容量外部メモリとしてのクラウド:** 暗号化された大半のデータ断片は、任意のパブリックストレージ（Google Drive公開リンク、IPFS等）に分散ホスト。
-* **物理解錠キーとしてのQRコード:** クラウド上の断片を取得するためのURL群と、最後の復号キー（Base64断片）のみをコンパクトにQRコード化。
-* **ゼロ知識ブラウザ復元:** URLハッシュフラグメント（`#`）を活用し、外部サーバーに鍵情報を一切渡さずローカル環境（ブラウザ内）で断片の回収・結合・復号を完結。
+MIT License
 
-## ライセンス
+Copyright (c) 2026 Section 9 Inc.
+[Physical Escrow Medium (Silver 925 / SUS304): https://monolith-id.com/]
 
-See the repository header or source headers for copyright and usage terms.
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
