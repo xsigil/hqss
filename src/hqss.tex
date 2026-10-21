@@ -398,7 +398,66 @@ openssl enc -d -aes-256-cbc -salt -pbkdf2 -iter 100000 \
 \end{table}
 
 \section{%
-  \ifja 4. 結論 \else 4. Conclusion \fi
+  \ifja 4. HQSS-v4.1に基づくゼロ知識・非預託型データエスクロープロトコル \else 4. Zero-Knowledge Non-Custodial Data Escrow Protocol via HQSS-v4.1 \fi
+}
+\ifja
+HQSS-v4.1の先頭ブロック物理隔離アーキテクチャは、単一主体のバックアップに留まらず、二者間におけるデジタル資産（秘密鍵、ソースコード、署名済み譲渡承諾書PDF等）のトラストレスな権利移転・売買調停プロトコルへと自然に拡張可能である。本章では、調停者（Arbiter）が平文データおよび取引金銭の双方に対して一切の預託権限を持たない、ゼロ知識・非預託（Non-Custodial）エスクロープロトコル \texttt{escrow.monolith-id.com} の数理モデルと運用仕様を規定する。
+
+\subsection{4.1 2-of-3 シャミア秘密分散による調停トポロジー}
+売主（Seller / $S$）、買主（Buyer / $B$）、調停者（Arbiter / $A$, Section 9 Inc.）の3者間で、コアペイロード $P_{\text{core}} = M_0 \mathbin{\Vert} \text{uint32\_be}(L_{\text{salt}})$ をガロア体 $GF(2^8)$ 上で $(k=2, n=3)$ の閾値分散する。
+\begin{itemize}
+  \item \textbf{売主 ($S$):} 生成元データ、クラウドバンドル $B_{\text{cloud}}$、$S_1$（Share 1）を保持。
+  \item \textbf{買主 ($B$):} 事前に $B_{\text{cloud}}$ および $S_2$（Share 2）を受領・保持。
+  \item \textbf{調停者 ($A$):} 開設時に $S_3$（Share 3）のみを暗号化預託され一時保持。
+\end{itemize}
+$k=2$ であるため、単一のシェア（$S_2$ または $S_3$）と $B_{\text{cloud}}$ を握る $B$ および $A$ は、単独では平文 $M$ を1ビットも復元できない。特に調停者 $A$ は $B_{\text{cloud}}$ すら保持しないため、顧客資産の平文に対する完全なゼロ知識性が数学的に担保される。
+
+\subsection{4.2 GPG分離署名による偽暗号文・偽シェア攻撃の完全排除}
+暗号エスクローにおける古典的課題である「売主が最初から復号不能なランダムノイズや偽暗号文（Bogus Ciphertext）を渡し、代金決済後に持ち逃げする不正」に対し、本プロトコルはGPG分離署名（Detached Signature）を用いたゼロ知識コミットメントを強制する。
+\begin{enumerate}
+  \item \textbf{署名コミットメントの事前発行:} 売主 $S$ は、対象平文 $M$ に対し自身のGPG秘密鍵を用いて分離署名 $\sigma = \text{Sign}_{sk_S}(M)$ を生成する。
+  \item \textbf{完全性公開:} $S$ は、$\sigma$ および自身の公開鍵 $pk_S$ を調停者 $A$ および買主 $B$ へ事前提示する。$\sigma$ の内部には平文の暗号学的ダイジェスト $H_M = \text{SHA256}(M)$ が数学的に封印されている。
+  \item \textbf{客観的検証判定:} 買主 $B$ は復元スクリプト実行直後にローカル環境で $\text{Verify}_{pk_S}(\sigma, M_{\text{restored}})$ を自動執行する。不一致時は直ちに紛争（Dispute）を申し立てる。
+  \item \textbf{ゼロ知識調停:} 紛争時、買主 $B$ は平文 $M$ そのものを開示する必要はなく、算出したハッシュ値 $H'_M = \text{SHA256}(M_{\text{restored}})$ のみを調停者 $A$ に提出する。$A$ は $\sigma$ から導出される期待値 $H_M$ と $H'_M$ の一致判定を行うだけで、平文を一切不可知のまま売主の不正を機械的・決定論的に断罪できる。
+\end{enumerate}
+
+\subsection{4.3 金銭非預託型決済シーケンス}
+調停者 $A$ は当事者間の本代金を一切預託・プールしない。これにより銀行法（為替取引規制）および資金決済法（資金移動業・暗号資産交換業カストディ規制）の適用対象外となり、純粋な技術調停プロバイダーとして機能する。代金決済とシェア解放の確定性は以下の2系統によって担保される。
+\begin{enumerate}
+  \item \textbf{決済オーソリ連動型（Auth/Void）:} クレジットカード決済等の与信枠確保（Auth）をトリガーとしてセッションをロックする。調停成立時は売上確定（Capture）を行い、売主不正時は枠の即時解放（Void）を叩く。資金プールが存在しないため返金オペレーション自体が発生しない。
+  \item \textbf{受託証明先行型（Proof-of-Escrow Escrow）:} 銀行直接振込・暗号資産直接送金の場合、売主 $S$ が正当な $S_3$ を調停者 $A$ に預託した「預託受託証明書」が発行されるまで買主 $B$ は1円も支払わない。支払完了エビデンス（着金通知またはTxID）の照合により、$S_3$ のディスパッチを実行する。
+\end{enumerate}
+\else
+HQSS-v4.1 naturally extends from single-party key custody into a trustless bilateral digital asset settlement and clearing protocol (covering private keys, source repositories, and signed ownership deeds in PDF). This section formulates \texttt{escrow.monolith-id.com}, a zero-knowledge, non-custodial escrow protocol wherein the Arbiter possesses neither plaintext data nor transacted principal funds.
+
+\subsection{4.1 2-of-3 Shamir Dispersion Topology}
+Let the participants be Seller ($S$), Buyer ($B$), and Arbiter ($A$, Section 9 Inc.). The core payload $P_{\text{core}} = M_0 \mathbin{\Vert} \text{uint32\_be}(L_{\text{salt}})$ is partitioned over $GF(2^8)$ at threshold $(k=2, n=3)$:
+\begin{itemize}
+  \item \textbf{Seller ($S$):} Retains master asset, cloud bundle $B_{\text{cloud}}$, and $S_1$ (Share 1).
+  \item \textbf{Buyer ($B$):} Pre-receives and holds $B_{\text{cloud}}$ and $S_2$ (Share 2).
+  \item \textbf{Arbiter ($A$):} Escrows strictly $S_3$ (Share 3) under zero-knowledge confinement.
+\end{itemize}
+Since $k=2$, neither $B$ nor $A$ alone can recover $M$. Arbiter $A$ does not hold $B_{\text{cloud}}$, eliminating all insider reconnaissance and compliance liability.
+
+\subsection{4.2 Eradication of Bogus-Ciphertext Injections via GPG Detached Signatures}
+To eliminate the classical attack where a malicious seller transmits arbitrary garbage data and absconds post-payment, the protocol enforces an out-of-band GPG signature commitment:
+\begin{enumerate}
+  \item \textbf{Detached Commitment:} Seller $S$ produces detached signature $\sigma = \text{Sign}_{sk_S}(M)$ over plaintext $M$.
+  \item \textbf{Commitment Publication:} $S$ publishes $\sigma$ and public key $pk_S$ to $A$ and $B$. Signature $\sigma$ cryptographically binds digest $H_M = \text{SHA256}(M)$.
+  \item \textbf{Local Verification:} Immediately following reconstruction, $B$ executes $\text{Verify}_{pk_S}(\sigma, M_{\text{restored}})$.
+  \item \textbf{Zero-Knowledge Dispute Arbitration:} In a dispute, $B$ reveals only digest $H'_M = \text{SHA256}(M_{\text{restored}})$ to $A$. Arbiter $A$ evaluates $H'_M \stackrel{?}{=} H_M$ extracted from $\sigma$, deterministically ruling on seller breach without accessing plaintext $M$.
+\end{enumerate}
+
+\subsection{4.3 Non-Custodial Financial Settlement Architecture}
+Arbiter $A$ never holds custody of transacted principal funds, bypassing banking and fund transfer regulations. Enforceability is guaranteed via two execution paths:
+\begin{enumerate}
+  \item \textbf{Credit Auth/Void Primitive:} Buyer credit line is reserved (Auth) at session initialization. Validation triggers Capture; detected breach triggers immediate Void without refund friction.
+  \item \textbf{Proof-of-Escrow Prerequisite:} Under direct bank wire or on-chain cryptocurrency transfer, Buyer withholds payment until $A$ publishes a cryptographic receipt confirming deposit of valid $S_3$. Dispatch occurs upon verifiable settlement proof.
+\end{enumerate}
+\fi
+
+\section{%
+  \ifja 5. 結論 \else 4. Conclusion \fi
 }
 \ifja
 HQSS-v4.1は、ハイブリッド秘密分散における最大の死角であった「クラウド単体からの鍵導出・辞書攻撃オラクルの成立可能性」を、$M_0$（先頭スライス）の物理エスクロー隔離によって完全に無力化した。
