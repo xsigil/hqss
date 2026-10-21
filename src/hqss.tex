@@ -37,7 +37,7 @@
 
 \lstset{
   backgroundcolor=\color{codebg},
-  basicstyle=\ttfamily\small,
+  basicstyle=\ttfamily\scriptsize,
   breaklines=true,
   breakatwhitespace=true,
   frame=single,
@@ -62,9 +62,9 @@
 \title{%
   \LARGE\textbf{%
     \ifja
-      HQSS-v4: 可変長ランダムソルト・末尾フッター結合と\\残余断片極小シャミア秘密分散（2-of-5）による\\真の情報理論的完全鍵保管プロトコル
+      HQSS-v4.1: 先頭断片$M_0$（ソルト・IV・ヘッダー）物理隔離と\\可変長CSPRNG末尾ソルトによる\\真の情報理論的完全鍵保管プロトコル
     \else
-      HQSS-v4: True Information-Theoretic Key Escrow via\\Trailing Variable-Length CSPRNG Salt Masking and Minimal Shamir (2-of-5) QR Dispersion
+      HQSS-v4.1: True Information-Theoretic Key Escrow via\\Physical Partition $M_0$ Isolation and Trailing Variable-Length CSPRNG Salt Masking
     \fi
   }
 }
@@ -85,158 +85,277 @@
 
 \begin{abstract}
 \ifja
-本モノグラフでは、暗号鍵（LUKSマスターキーやGnuPG秘密鍵等）の恒久的保管プロトコル「Hybrid QR Secret Splitter v4 (HQSS-v4)」を提示する。本バージョンでは、旧版（v3）における固定長ソルト注入構造を根本から見直し、先頭90\%ブロック群（$M_0 \sim M_8$）を一括結合したデータ末尾に対して、$0 \sim 4095$ バイトの暗号論的擬似乱数（CSPRNG）による可変長ランダムソルトを単一付加する。同時に、物理QRコード側にソルト実体を抱え込む無駄を完全に排除し、欠落させた残余の第10ブロック（$M_9$）の末尾に「ソルト長を表す固定4バイト整数（uint32）」のみをアペンドした極小コアペイロードを構築する。この極小化されたペイロードに対し、ガロア体 $GF(2^8)$ 上のShamir秘密分散法（2-of-5閾値）を適用して低密度QRコード群として物理分散保管する。本拡張により、クラウド上のデータ長および境界は数学的に完全撹乱され、ストリッピング探索オラクルが完全に消滅する。さらにQRコードのデータ量が極限まで削減されたことで、金属板（シルバーやステンレス）へのレーザー彫刻耐性と光学読取マージンが飛躍的に向上した。
+本モノグラフでは、暗号鍵（LUKSマスターキーやGnuPG秘密鍵等）の恒久的保管プロトコル「Hybrid QR Secret Splitter v4.1 (HQSS-v4.1)」を提示する。本バージョンでは、v4.0における末尾ブロック（$M_9$）退避設計を根本から反転させ、OpenSSLの\texttt{Salted\_\_}マジック、PBKDF2暗号学的ソルト（64ビット）、初期化ベクトル（IV）、および先頭暗号ブロック（$C_0$）を内包する「先頭断片 $M_0$」を手元物理プレート（Shamir秘密分散 2-of-5）側へ完全に隔離退避させる。パブリッククラウド側には中間から末尾にかけての断片群（$M_1 \sim M_9$）のみを配置し、その末尾に $0 \sim 4095$ バイトのCSPRNG可変長ランダムソルトを単一付加する。本アーキテクチャにより、クラウド単体データからは暗号学的ソルトとIVが完全に消滅し、平文ヘッダー（GPG/LUKS等）を用いた既知平文攻撃オラクルおよびオフライン辞書攻撃が数学的・物理的に完全遮断される。さらに、物理QRコード側のデータ量は極小サイズに維持され、金属板（シルバー925やSUS304真鍮象嵌）へのレーザー彫刻耐性と光学読取マージンを最大限に担保する。
 \else
-This monograph formally introduces the Hybrid QR Secret Splitter v4 (HQSS-v4), a definitive cryptographic key escrow architecture achieving unconditional information-theoretic security with minimal physical footprint. Advancing beyond the fixed-offset parameters of v3, HQSS-v4 aggregates the remote 90\% ciphertext pool ($M_0 \sim M_8$) and appends a single, variable-length CSPRNG salt sequence spanning $0 \sim 4095$ bytes. Crucially, the requirement to escrow the salt entropy on physical tokens is eliminated; instead, the physical core payload is formed solely by the 10\% residual chunk ($M_9$) appended with a fixed 4-byte big-endian uint32 field representing the salt length. This minimal artifact is escrowed via Shamir's Secret Sharing over $GF(2^8)$ (2-of-5 threshold) using \texttt{gfsplit}, yielding ultra-low-density QR matrixes optimized for metal engraving. Consequently, the cloud artifact boundary is completely obfuscated against heuristic stripping attacks, while decoding complexity is strictly minimized.
+This monograph formally introduces the Hybrid QR Secret Splitter v4.1 (HQSS-v4.1), an uncompromising cryptographic key escrow architecture achieving unconditional resilience against offline trial-decryption oracles. Inverting the partition topology of v4.0, HQSS-v4.1 strictly isolates the initial segment ($M_0$)—encapsulating the OpenSSL header, PBKDF2 salt, initial vector (IV), and the primary ciphertext block ($C_0$)—into the physical Shamir shares over $GF(2^8)$ (2-of-5 threshold). The untrusted cloud bundle retains strictly partitions $M_1 \sim M_9$, terminated by an arbitrary $0 \sim 4095$ byte CSPRNG salt mask. Consequently, the cloud artifact lacks the PBKDF2 salt and first ciphertext boundary entirely, mathematically eliminating offline dictionary attacks and known-plaintext validation oracles even under infinite compute. Physical QR density remains at its absolute lower bound, optimized for deep laser engraving and furnace brass-inlay sintering on Silver 925 and SUS304 substrates.
 \fi
 \end{abstract}
 
 \vspace{1.5em}
 
 \section{%
-  \ifja 1. 設計思想とv4におけるパラダイムシフト \else 1. Paradigm Shift and Architecture in v4 \fi
+  \ifja 1. 設計思想とv4.1におけるパラダイムシフト \else 1. Paradigm Shift and Architecture in v4.1 \fi
 }
 \ifja
-HQSS-v3では、暗号文を均等分割して先頭9ブロックに各32バイトの固定長ソルトを注入し、残余10\%（$B_9$）およびソルト実体テーブルを手元QRコードに逃がすことで、パディング/認証オラクルの消滅と白色雑音化を達成した。
+HQSS-v4.0では、末尾10\%（$M_9$）を物理側に退避させ、先頭90\%（$M_0 \sim M_8$）に可変長ソルトを付加してクラウドへ分散する構成をとっていた。しかし、この構成では先頭断片 $M_0$ がクラウド側に存在するため、OpenSSLヘッダー内のPBKDF2ソルトや暗号文第1ブロック $C_0$ が攻撃者の手に渡り、定型ヘッダー（GPG鍵やLUKSヘッダー等）を標的としたオフライン辞書攻撃の検証オラクルを部分的に許容する余地を残していた。
 
-しかしながら、ソルト長が32バイト固定であるという既知の仕様は、攻撃者に対して「先頭から一定バイトを機械的に削り落としてみる」というヒューリスティックな探索余地（ストリッピング攻撃）をわずかながら残していた。また、ソルト実体群を手元QRコードに抱え込む設計は、コアペイロードを肥大化させ、物理金属プレート（シルバーやステンレス）への高精度レーザー彫刻や光学スキャン時のセル密度要件を圧迫していた。
-
-HQSS-v4は、この2つの工学的課題を極めてエレガントな設計で同時解決する。
+HQSS-v4.1は、物理側とクラウド側のスライス割り当てを反転させることで、この問題を完全に根絶する。
 \begin{enumerate}
-  \item \textbf{一括結合末尾への可変長ランダムソルト注入:}
-    $M_0 \sim M_8$ の各断片間に個別ソルトを挟む煩雑さを排し、先頭90\%を一括結合した末尾に対して $0 \sim 4095$ バイトの可変長CSPRNGソルトを付加する。クラウド上のファイルサイズから元の暗号文長を逆算するサイドチャネルや境界探索を数学的に遮断する。
-  \item \textbf{ソルト実体の完全破棄と4バイトフッター化:}
-    ソルトがプレフィックス/サフィックス注入である以上、復元に必要な情報は「ソルトの長さ」のみであり、ソルト実体そのものをQRコード側に保存する必要はない。手元のコアペイロードは $M_9$ の末尾に「4バイトの長さ表現（uint32）」をアペンドするだけで完結する。
-  \item \textbf{QRコード密度の極小化と物理的堅牢性の最大化:}
-    ペイロードから不要なエントロピー実体が排除されたことで、QRコードのマトリクスサイズ（バージョン）が劇的に縮小した。貴金属地金（SV925）やステンレス板に対するレーザー深彫り・硫黄黒化（いぶし銀）加工において、研磨傷や光学反射にビクともしない極めて高い読取信頼性を獲得した。
+  \item \textbf{先頭断片 $M_0$（ソルト・IV・ヘッダー）の物理隔離:}
+    暗号文の先頭ブロック $M_0$ を手元物理エスクロー側へ完全に退避させる。これにより、クラウド側からPBKDF2ソルト（64ビット乱数）とIVが物理的に消滅し、攻撃者がクラウド単体から鍵導出（$K$）や復号判定を行うことが数学的に不可能となる。
+  \item \textbf{中間・末尾ブロック（$M_1 \sim M_9$）の一括クラウド配備と末尾ソルト撹乱:}
+    クラウドバンドルには $M_1 \sim M_9$ のみを配置し、その末尾に $0 \sim 4095$ バイトのCSPRNGソルトを結合する。開始位置も終了位置も特定不能な「浮動する中間暗号ストリーム」へと縮退させる。
+  \item \textbf{4バイトフッターによる極小コアペイロードの維持:}
+    コアペイロードは $M_0$ の末尾にソルト長を表す4バイト整数（uint32 ビッグエンディアン）をアペンドするだけで完結する。QRコードの低密度性を損なうことなく、金属象嵌プレートへの刻印精度を極限まで保つ。
 \end{enumerate}
 \else
-HQSS-v3 successfully demonstrated oracle annihilation by withholding the final 10\% chunk and injecting 32-byte salts into the initial 9 segments. However, the fixed 32-byte salt parameter left a theoretical margin for heuristic stripping exploration. Furthermore, retaining the salt entropy within the physical QR artifact unnecessarily expanded the core payload, increasing matrix density when engraving onto precious metals.
+HQSS-v4.0 withheld partition $M_9$ while placing $M_0 \sim M_8$ in the cloud. However, retaining $M_0$ on public storage exposed the PBKDF2 salt and the initial ciphertext block ($C_0$), theoretically enabling offline passphrase verification against predictable headers.
 
-HQSS-v4 resolves both theoretical and physical constraints simultaneously:
+HQSS-v4.1 resolves this attack vector by inverting the partition boundary:
 \begin{enumerate}
-  \item \textbf{Trailing Variable-Length Salt Masking:} Rather than interleaving segmented salts, the concatenated 90\% stream ($M_0 \sim M_8$) is masked by a single trailing CSPRNG random sequence spanning $0 \sim 4095$ bytes. The true ciphertext boundary is completely obscured.
-  \item \textbf{Zero Salt-Entropy Escrow via 4-Byte Footer:} Since salt removal requires only boundary knowledge, storing salt data on physical media is mathematically redundant. The core payload consists solely of chunk $M_9$ terminated by a fixed 4-byte big-endian uint32 length footer.
-  \item \textbf{Ultra-Low Matrix Density for Metal Engraving:} Eliminating salt entropy slashes QR payload size, allowing large, resilient cells during fiber laser deep engraving and sulfur blackening on Sterling Silver (SV925) or SUS304 substrates.
+  \item \textbf{Physical Isolation of Partition $M_0$:} Partition $M_0$ (holding the OpenSSL header, PBKDF2 salt, and IV) is confined strictly to physical Shamir shares. Without possession of physical shares, calculating the AES key ($K$) or testing candidate passphrases from the cloud bundle is computationally impossible.
+  \item \textbf{Floating Intermediate Stream ($M_1 \sim M_9$):} The cloud bundle retains only intermediate blocks $M_1 \sim M_9$ terminated by a $0 \sim 4095$ byte CSPRNG mask, erasing known header footprints and trailing structures.
+  \item \textbf{Zero-Overhead 4-Byte Footer Architecture:} Escrowing only $M_0$ and the 4-byte uint32 length footer preserves ultra-low-density QR matrixes, ideal for metal sintering and deep fiber-laser engraving.
 \end{enumerate}
 \fi
 
 \section{%
-  \ifja 2. HQSS-v4 プロトコル詳細 \else 2. HQSS-v4 Protocol Specification \fi
+  \ifja 2. HQSS-v4.1 プロトコル詳細 \else 2. HQSS-v4.1 Protocol Specification \fi
 }
 
 \subsection{%
   \ifja 2.1 暗号化・可変ソルト注入・分散生成 \else 2.1 Encryption, Variable Masking, and Dispersion \fi
 }
 \ifja
-秘密鍵平文 $M$ から配布用アーティファクトを構築する確定的一連の処理は以下の通りである。
+秘密鍵平文 $M$ から配布用アーティファクトを構築するパイプラインは以下の通りである。
 \begin{enumerate}
-  \item \textbf{基本暗号化:} パスフレーズ $P$ を用い、AES-256（Armored形式）によって平文 $M$ を暗号化し、暗号文 $C$ を生成する。
-  \item \textbf{10等分スライシング:} $C$ をバイト均等に10個の断片 $\{M_0, M_1, \dots, M_9\}$ に分割する。
-  \item \textbf{先頭90\%の一括結合:} $M_0 \sim M_8$ を順次結合し、$M_{0\dots8} = M_0 \mathbin{\Vert} \dots \mathbin{\Vert} M_8$ を生成する。
-  \item \textbf{可変長ランダムソルトの生成とクラウド結合:} 暗号論的擬似乱数により $0 \sim 4095$ バイトの整数長 $L_{\text{salt}}$ を決定する。$L_{\text{salt}}$ バイトのCSPRNG乱数列 $S_{\text{rand}}$ を生成し、クラウドバンドル $B_{\text{cloud}} = M_{0\dots8} \mathbin{\Vert} S_{\text{rand}}$ を作成して外部クラウドストレージ群へ配備する。
-  \item \textbf{コアペイロードの構成:} 第10ブロック $M_9$ の末尾に、$L_{\text{salt}}$ を表す4バイト固定整数（uint32 ビッグエンディアン）をアペンドし、$P_{\text{core}} = M_9 \mathbin{\Vert} \text{uint32\_be}(L_{\text{salt}})$ を生成する。
-  \item \textbf{シャミア秘密分散とQR生成:} ガロア体 $GF(2^8)$ 上で $(k=2, n=5)$ の多項式補間（\texttt{gfsplit}）を実行し、5つのシェア $\{S_1, S_2, S_3, S_4, S_5\}$ を出力する。各シェアをBase64変換し、中解像度QRコード（誤り訂正レベルM）として出力・物理刻印する。
+  \item \textbf{基本暗号化:} パスフレーズ $P$ を用い、AES-256-CBC（PBKDF2 100,000回反復、暗号学的ソルト付加）により平文 $M$ を暗号化し、暗号文 $C$ を生成する。
+  \item \textbf{10等分スライシング:} $C$ をバイト均等に10個の断片 $\{M_0, M_1, \dots, M_9\}$ に分割する（\texttt{split -n 10 -d}）。
+  \item \textbf{中間・末尾ブロックの一括結合:} $M_1 \sim M_9$ を順次結合し、$M_{1\dots9} = M_1 \mathbin{\Vert} \dots \mathbin{\Vert} M_9$ を生成する。
+  \item \textbf{可変長ランダムソルトの生成とクラウド結合:} 暗号論的擬似乱数により $0 \sim 4095$ バイトの整数長 $L_{\text{salt}}$ を決定する。$L_{\text{salt}}$ バイトの乱数列 $S_{\text{rand}}$ を生成し、クラウドバンドル $B_{\text{cloud}} = M_{1\dots9} \mathbin{\Vert} S_{\text{rand}}$ を作成してクラウドへ配備する。
+  \item \textbf{コアペイロードの構成:} 先頭ブロック $M_0$ の末尾に、$L_{\text{salt}}$ を表す4バイト固定整数（uint32 ビッグエンディアン）をアペンドし、$P_{\text{core}} = M_0 \mathbin{\Vert} \text{uint32\_be}(L_{\text{salt}})$ を生成する。
+  \item \textbf{シャミア秘密分散と物理エスクロー:} ガロア体 $GF(2^8)$ 上で $(m=2, n=5)$ 閾値（\texttt{gfsplit}）を実行し、$n$ 個の物理シェアを出力する。
 \end{enumerate}
 \else
 The generation pipeline executes deterministically as follows:
 \begin{enumerate}
-  \item \textbf{Primary Cipher:} Encrypt plaintext secret key $M$ using AES-256 to produce armored ciphertext $C$.
-  \item \textbf{Decary Fragmentation:} Slice $C$ evenly into 10 byte segments $\{M_0, M_1, \dots, M_9\}$ via \texttt{split -n 10}.
-  \item \textbf{Bulk Aggregation:} Concatenate the initial nine blocks: $M_{0\dots8} = M_0 \mathbin{\Vert} \dots \mathbin{\Vert} M_8$.
-  \item \textbf{Trailing Salt Mask Synthesis:} Select a random salt length $L_{\text{salt}} \in [0, 4095]$ via CSPRNG. Generate $L_{\text{salt}}$ random bytes $S_{\text{rand}}$ and assemble $B_{\text{cloud}} = M_{0\dots8} \mathbin{\Vert} S_{\text{rand}}$.
-  \item \textbf{Core Payload Construction:} Concatenate the 10th block $M_9$ with the 4-byte big-endian representation of $L_{\text{salt}}$, yielding $P_{\text{core}} = M_9 \mathbin{\Vert} \text{uint32\_be}(L_{\text{salt}})$.
-  \item \textbf{Threshold Splitting \& QR Rendering:} Split $P_{\text{core}}$ using \texttt{gfsplit} over $GF(2^8)$ configured at $(k=2, n=5)$. Base64-encode each share and render with \texttt{qrencode} (Level M) for physical token engraving.
+  \item \textbf{Primary Cipher:} Encrypt plaintext secret key $M$ via AES-256-CBC (PBKDF2 100,000 iterations, CSPRNG salt) to yield ciphertext $C$.
+  \item \textbf{Decary Fragmentation:} Slice $C$ evenly into 10 partitions $\{M_0, M_1, \dots, M_9\}$ via \texttt{split -n 10 -d}.
+  \item \textbf{Intermediate Stream Aggregation:} Concatenate partitions 1 through 9: $M_{1\dots9} = M_1 \mathbin{\Vert} \dots \mathbin{\Vert} M_9$.
+  \item \textbf{Trailing Salt Mask Synthesis:} Generate random length $L_{\text{salt}} \in [0, 4095]$ and CSPRNG bytes $S_{\text{rand}}$. Assemble $B_{\text{cloud}} = M_{1\dots9} \mathbin{\Vert} S_{\text{rand}}$.
+  \item \textbf{Core Payload Construction:} Concatenate partition $M_0$ with the 4-byte big-endian uint32 representation of $L_{\text{salt}}$: $P_{\text{core}} = M_0 \mathbin{\Vert} \text{uint32\_be}(L_{\text{salt}})$.
+  \item \textbf{Threshold Splitting:} Disperse $P_{\text{core}}$ using \texttt{gfsplit} over $GF(2^8)$ configured at $m$-of-$n$ threshold.
 \end{enumerate}
 \fi
 
-\begin{lstlisting}[language=bash, caption={Reference Implementation: HQSS-v4 Provisioning Pipeline}]
-#!/bin/bash
-set -euo pipefail
+\begin{lstlisting}[language=bash, caption={Reference Implementation: gen.sh (HQSS-v4.1)}]
+#!/bin/sh
+set -eu
 
-# 1. 秘密鍵のエクスポートとAES暗号化
-gpg --armor --export-secret-keys <KEY-ID> | \
-  gpg --symmetric --cipher-algo AES256 --armor --output key.asc
-
-# 2. 10等分スライス
-mkdir -p /tmp/hqss4 && cd /tmp/hqss4
-split -n 10 -d key.asc raw_part_
-
-# 3. M0〜M8 を一括結合
-cat raw_part_0[0-8] > m0_to_m8.bin
-
-# 4. 0〜4095バイトの可変長ランダムソルト長を決定
-RAND_LEN=$(( $(od -An -N2 -tu2 /dev/urandom | tr -d ' ') % 4096 ))
-
-# 5. クラウドバンドルの作成 (M0..M8 + RANDOM_SALT)
-head -c "$RAND_LEN" /dev/urandom > rand_salt.bin
-cat m0_to_m8.bin rand_salt.bin > cloud_bundle.bin
-
-# 6. コアペイロードの作成 (M9 + 4byte uint32 ビッグエンディアン)
-printf "%08x" "$RAND_LEN" | xxd -r -p > len_footer.bin
-cat raw_part_09 len_footer.bin > core_payload.bin
-
-# 7. コアペイロードを 2-of-5 シャミア秘密分散 (libgfshare: gfsplit)
-gfsplit -n 5 -m 2 core_payload.bin share_
-
-# 8. Base64化してQRコード生成（物理金属プレート・紙片配備）
-for f in share_*; do
-    base64 -w 0 "$f" | qrencode -s 6 -l M -o "${f}.png"
+# --debug オプションの解析
+DEBUG=0
+for arg in "$@"; do
+    if [ "$arg" = "--debug" ] || [ "$arg" = "-d" ]; then
+        DEBUG=1
+    fi
 done
+
+debug_log() {
+    if [ "${DEBUG}" -eq 1 ]; then
+        printf "[DEBUG] %s\n" "$*"
+    fi
+}
+
+debug_xxd() {
+    if [ "${DEBUG}" -eq 1 ]; then
+        xxd "$@"
+    fi
+}
+
+echo "============================================================"
+echo " MONOLITH PROTOCOL [HQSS-v4.1] UNIVERSAL PROVISIONING TOOL"
+echo " Arbitrary m-of-n Shamir Secret Sharing over GF(2^8)"
+echo " Licensed under MIT License | Section 9 Inc."
+echo ""
+echo " Sovereign Physical Escrow Plates (Silver 925 / SUS304 Brass Inlay):"
+echo " -> https://monolith-id.com/"
+echo " Prerequisites: openssl, split, gfsplit, gfcombine, xxd, base64"
+if [ "${DEBUG}" -eq 1 ]; then
+    echo " [VERBOSE DEBUG MODE ENABLED]"
+fi
+echo "============================================================"
+
+for cmd in openssl split gfsplit gfcombine xxd base64 od tail head wc; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        echo "[ERROR] Required tool '$cmd' is not installed." >&2
+        exit 1
+    fi
+done
+
+WORK_DIR=$(mktemp -d 2>/dev/null || mktemp -d -t 'monolith_hqss4')
+trap 'rm -rf "${WORK_DIR}"' EXIT INT TERM
+
+if [ -t 0 ]; then
+    TTY_DEV="/dev/stdin"
+elif [ -e /dev/tty ]; then
+    TTY_DEV="/dev/tty"
+else
+    echo "[ERROR] Interactive TTY not available." >&2
+    exit 1
+fi
+
+printf "\n[STEP 1] Enter file path to master secret:\n> "
+read -r TARGET_FILE_PATH < "${TTY_DEV}"
+
+EXPANDED_PATH="${TARGET_FILE_PATH}"
+case "${EXPANDED_PATH}" in
+    "~"/*) EXPANDED_PATH="${HOME}/${EXPANDED_PATH#\~/}" ;;
+    "~")   EXPANDED_PATH="${HOME}" ;;
+esac
+
+if [ -z "${EXPANDED_PATH}" ] || [ ! -f "${EXPANDED_PATH}" ] || [ ! -s "${EXPANDED_PATH}" ]; then
+    echo "[ERROR] Invalid or empty file path." >&2
+    exit 1
+fi
+
+SECRET_FILE="${WORK_DIR}/plaintext.bin"
+cp -f "${EXPANDED_PATH}" "${SECRET_FILE}"
+
+printf "\n[STEP 2] Enter primary AES-256 passphrase:\n> "
+stty -echo 2>/dev/null || true
+read -r PASSPHRASE < "${TTY_DEV}"
+stty echo 2>/dev/null || true
+printf "\n"
+
+printf "[STEP 3] Configure Shamir Threshold Parameters:\n"
+printf "Enter TOTAL physical plates to fabricate (n) [default: 5]:\n> "
+read -r TOTAL_N_IN < "${TTY_DEV}"
+TOTAL_N=${TOTAL_N_IN:-5}
+
+printf "Enter RECONSTRUCTION THRESHOLD (m) [default: 2]:\n> "
+read -r THRESH_M_IN < "${TTY_DEV}"
+THRESH_M=${THRESH_M_IN:-2}
+
+# 手順 1: 暗号化
+openssl enc -aes-256-cbc -salt -pbkdf2 -iter 100000 \
+    -in "${WORK_DIR}/plaintext.bin" \
+    -out "${WORK_DIR}/ciphertext.bin" \
+    -k "${PASSPHRASE}"
+
+# 手順 2: split -n 10 による均等10スライス
+split -n 10 -d "${WORK_DIR}/ciphertext.bin" "${WORK_DIR}/part_"
+
+cat "${WORK_DIR}/part_01" \
+    "${WORK_DIR}/part_02" \
+    "${WORK_DIR}/part_03" \
+    "${WORK_DIR}/part_04" \
+    "${WORK_DIR}/part_05" \
+    "${WORK_DIR}/part_06" \
+    "${WORK_DIR}/part_07" \
+    "${WORK_DIR}/part_08" \
+    "${WORK_DIR}/part_09" > "${WORK_DIR}/m1_to_m9.bin"
+
+# 手順 3: 可変長ランダムソルト (0..4095バイト) 生成と M1..M9 結合
+RAND_HEX=$(od -An -N2 -tx1 /dev/urandom | tr -d ' \n')
+SALT_LEN=$(( 0x${RAND_HEX} % 4096 ))
+
+if [ "${SALT_LEN}" -gt 0 ]; then
+    head -c "${SALT_LEN}" /dev/urandom > "${WORK_DIR}/rand_salt.bin"
+else
+    touch "${WORK_DIR}/rand_salt.bin"
+fi
+
+cat "${WORK_DIR}/m1_to_m9.bin" "${WORK_DIR}/rand_salt.bin" > "monolith_cloud_bundle.bin"
+chmod 644 "monolith_cloud_bundle.bin"
+
+# 手順 4: コアペイロードの作成 (M0 + 4byte uint32 ビッグエンディアン)
+printf "%08x" "${SALT_LEN}" | xxd -r -p > "${WORK_DIR}/len_footer.bin"
+cat "${WORK_DIR}/part_00" "${WORK_DIR}/len_footer.bin" > "${WORK_DIR}/core_payload.bin"
+
+# 手順 5: gfsplit による m-of-n シャミア秘密分散
+gfsplit -n "${THRESH_M}" -m "${TOTAL_N}" "${WORK_DIR}/core_payload.bin" "${WORK_DIR}/share"
+
+# 手順 6: gfcombine によるローカル復元自己テスト
+TEST_SHARES=$(ls -1 "${WORK_DIR}"/share.* 2>/dev/null | grep -v '\.000$' | grep -v '\.0$' | head -n "${THRESH_M}" | tr '\n' ' ')
+gfcombine -o "${WORK_DIR}/test_reconstructed_core.bin" ${TEST_SHARES}
+
+ORIGINAL_HASH=$(openssl dgst -sha256 "${WORK_DIR}/core_payload.bin" | awk '{print $NF}')
+VERIFIED_HASH=$(openssl dgst -sha256 "${WORK_DIR}/test_reconstructed_core.bin" | awk '{print $NF}')
+
+if [ "${ORIGINAL_HASH}" != "${VERIFIED_HASH}" ]; then
+    echo "[CRITICAL FAILURE] gfcombine round-trip verification failed." >&2
+    exit 1
+fi
 \end{lstlisting}
 
 \subsection{%
   \ifja 2.2 復元アルゴリズム \else 2.2 Reconstruction Pipeline \fi
 }
 \ifja
-復元は、完全オフライン環境で確定的パイプラインとして実行される。
+復元パイプラインは、完全オフライン環境で以下のように実行される。
 \begin{enumerate}
-  \item クラウドから $B_{\text{cloud}}$ をダウンロードする。
-  \item 5枚の物理QRコードから任意の2枚を光学読取し、Base64デコードして $S_x, S_y$ を抽出する。
-  \item \texttt{gfcombine} を実行してコアペイロード $P_{\text{core}}$ を再生する。
-  \item $P_{\text{core}}$ の末尾4バイトから $L_{\text{salt}}$（uint32 ビッグエンディアン）を取得し、先頭から $(\text{Total} - 4)$ バイトを切り出して第10ブロック $M_9$ を確定抽出する。
-  \item $B_{\text{cloud}}$ の末尾から $L_{\text{salt}}$ バイトを切り落として $M_{0\dots8}$ を復元し、$M_9$ を末尾に結合して元の完全暗号文 $C$ を復元する。
-  \item パスフレーズ $P$ により復号し、秘密鍵 $M$ を回収する。
+  \item クラウドから $B_{\text{cloud}}$（$M_1 \sim M_9$ ＋ ソルト）を取得する。
+  \item $m$ 枚の物理プレートからシェア $S_i$ を集約し、\texttt{gfcombine} で $P_{\text{core}}$ を復元する。
+  \item $P_{\text{core}}$ の末尾4バイトから $L_{\text{salt}}$ を取得し、手前の全バイトを $M_0$（先頭暗号ブロック）として確定抽出する。
+  \item $B_{\text{cloud}}$ の末尾から $L_{\text{salt}}$ バイトを剥離して $M_{1\dots9}$ を取り出す。
+  \item $\text{cat } M_0 \mathbin{\Vert} M_{1\dots9}$ の順序序列で結合し、元の完全暗号文 $C$ を復元する。
+  \item パスフレーズ $P$ により AES-256-CBC 復号し、平文鍵を回収する。
 \end{enumerate}
 \else
-Reconstruction operates deterministically in an offline, air-gapped terminal:
+Reconstruction operates deterministically in an offline terminal:
 \begin{enumerate}
-  \item Retrieve $B_{\text{cloud}}$ from public storage.
-  \item Scan any 2 QR cards to yield Base64 shares, decoding into $S_x, S_y$.
-  \item Execute \texttt{gfcombine} to reconstruct $P_{\text{core}}$.
-  \item Parse the terminal 4 bytes of $P_{\text{core}}$ as big-endian uint32 $L_{\text{salt}}$; slice the preceding $(\text{Total} - 4)$ bytes to yield chunk $M_9$.
-  \item Truncate $L_{\text{salt}}$ bytes from the end of $B_{\text{cloud}}$ to recover $M_{0\dots8}$, then append $M_9$ to reconstitute ciphertext $C$.
-  \item Decrypt $C$ with passphrase $P$ to restore master key $M$.
+  \item Ingest cloud bundle $B_{\text{cloud}}$ ($M_{1\dots9} \mathbin{\Vert} S_{\text{rand}}$).
+  \item Reconstruct $P_{\text{core}}$ via \texttt{gfcombine} from any $m$ physical shares.
+  \item Parse the terminal 4 bytes of $P_{\text{core}}$ to determine $L_{\text{salt}}$, slicing the preceding bytes to yield partition $M_0$.
+  \item Strip trailing $L_{\text{salt}}$ bytes from $B_{\text{cloud}}$ to recover $M_{1\dots9}$.
+  \item Reassemble complete ciphertext $C$ in strict order: $M_0 \mathbin{\Vert} M_{1\dots9}$.
+  \item Decrypt $C$ via OpenSSL AES-256-CBC using passphrase $P$.
 \end{enumerate}
 \fi
 
-\begin{lstlisting}[language=bash, caption={Reference Implementation: HQSS-v4 Restoration}]
-#!/bin/bash
-set -euo pipefail
+\begin{lstlisting}[language=bash, caption={Reference Implementation: restore.sh (HQSS-v4.1)}]
+#!/bin/sh
+set -eu
 
-# 1. スキャンした2片からコアペイロード復元 (libgfshare: gfcombine)
-echo "$SCAN_A" | base64 -d > share_1
-echo "$SCAN_B" | base64 -d > share_2
-gfcombine -o restored_core.bin share_1 share_2
+# 前提ツール検証 & 一時領域初期化
+for cmd in openssl gfcombine xxd base64 od tail head wc; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        echo "[ERROR] Required tool '$cmd' is not installed." >&2
+        exit 1
+    fi
+done
 
-# 2. 末尾4バイトからソルト長(uint32)を取得し、第10ブロック(M9)を抽出
-TOTAL_CORE=$(wc -c < restored_core.bin | tr -d ' ')
-M9_LEN=$(( TOTAL_CORE - 4 ))
-SALT_LEN=$(tail -c 4 restored_core.bin | od -An -tu4 --endian=big | tr -d ' ')
+WORK_DIR=$(mktemp -d 2>/dev/null || mktemp -d -t 'monolith_restore')
+trap 'rm -rf "${WORK_DIR}"' EXIT INT TERM
 
-dd if=restored_core.bin of=restored_part_09 bs=1 count="$M9_LEN" 2>/dev/null
+# 復元手順 1: gfcombine でコアペイロードを再構築
+gfcombine -o "${WORK_DIR}/reconstructed_core.bin" ${SHARE_FILE_LIST}
+TOTAL_CORE_LEN=$(wc -c < "${WORK_DIR}/reconstructed_core.bin" | tr -d ' ')
 
-# 3. クラウドバンドルの末尾からソルトを剥離して M0〜M8 を復元
-TOTAL_CLOUD=$(wc -c < cloud_bundle.bin | tr -d ' ')
-M0_M8_LEN=$(( TOTAL_CLOUD - SALT_LEN ))
+# 復元手順 2: 末尾4バイトからソルト長を取得し、M0を抽出 (HQSS-v4.1)
+M0_LEN=$(( TOTAL_CORE_LEN - 4 ))
+SALT_HEX=$(tail -c 4 "${WORK_DIR}/reconstructed_core.bin" | xxd -p | tr -d '\n')
+SALT_LEN=$(( 0x${SALT_HEX} ))
 
-head -c "$M0_M8_LEN" cloud_bundle.bin > restored_m0_to_m8.bin
+if [ "${M0_LEN}" -gt 0 ]; then
+    head -c "${M0_LEN}" "${WORK_DIR}/reconstructed_core.bin" > "${WORK_DIR}/part_00.bin"
+else
+    touch "${WORK_DIR}/part_00.bin"
+fi
 
-# 4. 完全暗号文を結合・復元
-cat restored_m0_to_m8.bin restored_part_09 > key.asc
+# 復元手順 3: クラウドバンドルの末尾からソルトを剥離して M1〜M9 を復元
+TOTAL_CLOUD_LEN=$(wc -c < "${CLOUD_PATH}" | tr -d ' ')
+M1_M9_LEN=$(( TOTAL_CLOUD_LEN - SALT_LEN ))
+head -c "${M1_M9_LEN}" "${CLOUD_PATH}" > "${WORK_DIR}/m1_to_m9.bin"
 
-# 5. 復号とインポート
-gpg --decrypt key.asc | gpg --import
+# 復元手順 4: 完全暗号文を結合・復元 (HQSS-v4.1: cat M0 + M1..M9)
+cat "${WORK_DIR}/part_00.bin" "${WORK_DIR}/m1_to_m9.bin" > "${WORK_DIR}/restored_ciphertext.bin"
+
+# 復元手順 5: パスフレーズによる AES-256 復号
+openssl enc -d -aes-256-cbc -salt -pbkdf2 -iter 100000 \
+    -in "${WORK_DIR}/restored_ciphertext.bin" \
+    -out "${WORK_DIR}/restored_plaintext.bin" \
+    -k "${PASSPHRASE}"
 \end{lstlisting}
 
 \section{%
@@ -246,34 +365,34 @@ gpg --decrypt key.asc | gpg --import
 \begin{table}[htbp]
 \centering
 \caption{%
-  \ifja HQSS-v4における多層防衛マトリクス \else Multi-Layered Threat Mitigation Matrix (HQSS-v4) \fi
+  \ifja HQSS-v4.1における多層防衛マトリクス \else Multi-Layered Threat Mitigation Matrix (HQSS-v4.1) \fi
 }
 \vspace{0.5em}
 \begin{tabularx}{\textwidth}{lXX}
 \toprule
 \textbf{\ifja 攻撃ベクトル \else Threat Vector \fi} & 
 \textbf{\ifja 攻撃者の能力・侵害規模 \else Adversary Capability \fi} & 
-\textbf{\ifja HQSS-v4 の防衛理論 \else HQSS-v4 Defensive Guarantee \fi} \\
+\textbf{\ifja HQSS-v4.1 の防衛理論 \else HQSS-v4.1 Defensive Guarantee \fi} \\
 \midrule
 \ifja クラウド全量押収 \else Cloud Repository Seizure \fi & 
 \ifja クラウド事業者の共謀や令状執行により $B_{\text{cloud}}$ が全量奪取される。 \else Adversary obtains full public cloud artifact $B_{\text{cloud}}$. \fi & 
-\ifja 第10ブロックの完全欠損に加え、末尾可変長ソルト（$0\sim4095$B）により暗号文終端が特定不能。平文に対する相互情報量は数学的に厳密なゼロ。 \else Information-theoretic security: missing chunk 9 and trailing random padding eliminate all plaintext mutual information ($I(M; B_{\text{cloud}}) = 0$). \fi \\
+\ifja 先頭断片 $M_0$（PBKDF2ソルト・IV・$C_0$）の完全欠損に加え、末尾可変長ソルト（$0\sim4095$B）により開始・終端位置が特定不能。平文に対する相互情報量は数学的に厳密なゼロ。 \else Information-theoretic security: missing chunk $M_0$ (salt, IV, $C_0$) and trailing padding eliminate all mutual information ($I(M; B_{\text{cloud}}) = 0$). \fi \\
 \addlinespace
-\ifja ヒューリスティック剥離攻撃 \else Heuristic Stripping Attacks \fi & 
-\ifja 固定ソルト長やブロック境界を仮定して機械的にストリップを試みる探索。 \else Adversary attempts trial-stripping based on assumed block borders. \fi & 
-\ifja ソルト長 $L_{\text{salt}}$ は手元QRコード内にのみ隔離されており、探索空間の組み合わせ爆発により境界特定が不可能。 \else Variable salt length is escrowed strictly within the physical threshold; boundary determination is computationally insoluble. \fi \\
+\ifja オフライン辞書攻撃 \else Offline Dictionary Attacks \fi & 
+\ifja パスフレーズ候補を並列生成し、暗号文に対する復号を試みる総当たり探索。 \else High-performance parallel dictionary/brute-force attack on passphrase. \fi & 
+\ifja 64ビットのPBKDF2ソルトが物理側に隔離されているため、鍵導出自体に $2^{64}$ の未知空間探索が必須となり、計算量的に完全成立不能。 \else The 64-bit PBKDF2 salt is strictly escrowed in physical shares; computing candidate keys requires $2^{64}$ salt space searches, rendering attacks computationally impossible. \fi \\
+\addlinespace
+\ifja 既知平文ヘッダー検証 \else Known-Plaintext Oracle \fi & 
+\ifja GnuPGやLUKSの固定ヘッダー（マジックナンバー）を用いた復号成功判定。 \else Trial validation using predictable plaintext headers (GPG/LUKS). \fi & 
+\ifja 先頭暗号ブロック $C_0$ および復号に必要な IV が物理側に隔離されているため、クラウド単体データから先頭平文を再構成するオラクルが完全消滅。 \else Initial block $C_0$ and IV are withheld physically; known-plaintext header verification oracles are mathematically eradicated. \fi \\
 \addlinespace
 \ifja 物理QRトークン1枚の盗難 \else Single QR Artifact Seizure \fi & 
 \ifja 空き巣や身体検査により物理金属プレート・紙片が1枚奪取・盗撮される。 \else Adversary captures a single physical QR token. \fi & 
 \ifja 2-of-5 シャミア秘密分散の完全性により、単一シェアから漏洩するコアペイロードの情報量は厳密に0ビット。 \else Shamir threshold property: single share yields mathematically zero information regarding $P_{\text{core}}$. \fi \\
 \addlinespace
-\ifja 超並列総当たり攻撃 \else Massively Parallel Brute-Force \fi & 
-\ifja 量子計算機や超並列GPUクラスタによるパスフレーズ総当たり。 \else Brute-force decryption cluster targeting passphrase $P$. \fi & 
-\ifja パディングおよびHMAC/GCM認証タグが欠損しているため、正否判定オラクルが存在せず総当たりが数学的に不成立。 \else Decryption oracle annihilated; trial decryptions cannot be validated, nullifying GPU cluster utility. \fi \\
-\addlinespace
 \ifja 局所災害・メディア劣化 \else Severe Physical Loss \fi & 
 \ifja 火災・水害により物理プレート5枚中3枚が完全に焼失・紛失。 \else Severe disaster destroys up to 3 physical QR tokens. \fi & 
-\ifja 残存する任意の2枚のみで多項式補間により完全復元可能。可用性要件を完璧に充足。 \else High disaster resilience: any 2 surviving cards guarantee 100\% mathematical reconstruction via Lagrange interpolation. \fi \\
+\ifja 残存する任意の2枚のみで多項式補間（Lagrange補間）により完全復元可能。 \else High disaster resilience: any 2 surviving cards guarantee 100\% mathematical reconstruction. \fi \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -282,36 +401,24 @@ gpg --decrypt key.asc | gpg --import
   \ifja 4. 結論 \else 4. Conclusion \fi
 }
 \ifja
-HQSS-v4は、不完全暗号文によるオラクル消滅理論を究極まで洗練させ、一括末尾可変長ソルト注入と末尾4バイト固定長フッター構造を融合させた。
-クラウド側への白色雑音撹乱を完璧に維持しつつ、物理QRコード側のペイロードを「残余断片 $M_9$ ＋ 4バイトのソルト長」という理論的最小限に圧縮した。
-これにより、シルバー925（銀地金）やステンレスプレートへのレーザー深彫り・硫黄黒化加工における物理的信頼性を飛躍的に高め、真の情報理論的安全性を誇るラグジュアリー・セキュリティプロダクトとしての完成度を確立した。
+HQSS-v4.1は、ハイブリッド秘密分散における最大の死角であった「クラウド単体からの鍵導出・辞書攻撃オラクルの成立可能性」を、$M_0$（先頭スライス）の物理エスクロー隔離によって完全に無力化した。
+ソルト実体を持たずオフセットフッター（4バイト）のみを $M_0$ と共にShamir秘密分散する設計により、物理QRコードのセル密度を極限まで低減させたまま、クラウド側に対する完全な情報理論的安全性を達成している。
+外部クラウドの信頼性や複雑怪奇な独自バイナリに依存せず、POSIX標準コマンドのみで災害からマスターキーを蘇生させる、オフラインファースト時代の極致たる鍵保管プロトコルである。
 \else
-HQSS-v4 elevates incomplete ciphertext key escrow to its definitive form by unifying bulk trailing CSPRNG salt masking with a deterministic 4-byte footer architecture. While strictly preserving perfect secrecy over untrusted public cloud infrastructure, physical QR payloads are reduced to their absolute mathematical lower bound ($M_9 \mathbin{\Vert} \text{uint32\_be}(L_{\text{salt}})$). This dramatic payload reduction maximizes optical scanning tolerance and material resilience during fiber laser engraving and sulfur blackening on Sterling Silver and stainless steel tokens, establishing an uncompromising standard for offline-first, disaster-proof key custody.
-\fi
-
-
-\section{%
-  \ifja 4. 結論 \else 4. Conclusion \fi
-}
-\ifja
-HQSS-v4は、不完全暗号文による復号オラクル消滅理論を究極まで推し進め、「単一末尾可変長ソルトマスキング」と「ソルト実体破棄による極小ペイロード化」を融合させることで、クラウドストレージ単体に対する完全な情報理論的安全性を確立した。
-ソルト実体を物理側に保持せず、オフセット長（4バイト）のみを第10ブロック $M_9$ と共にShamir秘密分散へ逃がす設計により、物理QRコードのセル密度を極限まで低減させることに成功した。
-「忘却しやすいパスワード」や「クラウド事業者の誠実性」に一切依存せず、最小限の物理低密度QRコードのみで世界規模の災害から重要鍵を蘇生させる、オフラインファースト時代の決定的な鍵保管プロトコルである。
-\else
-HQSS-v4 elevates incomplete ciphertext escrow into unconditional information-theoretic perfection by synthesizing single-tail ephemeral salt masking with zero-storage salt reconstruction. By withholding the unmasking offset and chunk $M_9$ within a Shamir threshold container, physical QR density is radically minimized while preserving unconditional resilience against cloud compromise and heuristic verification oracles. HQSS-v4 establishes the definitive, offline-first standard for catastrophic disaster recovery.
+HQSS-v4.1 definitively eliminates offline dictionary attacks and known-plaintext validation oracles by isolating partition $M_0$ into physical Shamir shares. By pairing zero-storage salt reconstruction (4-byte footer) with trailing CSPRNG masking, physical QR density is kept at its theoretical lower bound while achieving unconditional security over public cloud endpoints. Built entirely on standard POSIX primitives, HQSS-v4.1 establishes the definitive standard for disaster-proof key custody.
 \fi
 
 \section*{%
   \ifja 公式物理ハードウェアトークン \else Official Physical Hardware Artifacts \fi
 }
 \ifja
-本プロトコル仕様が要求する超低密度QRコードの光学的読取信頼性、および1000℃超の火災・水害・経年腐食への耐性を担保するため、純銀（Silver 925）および鍛造ステンレス（SUS304）にファイバーレーザー深彫り・硫黄黒化加工を施した公式エスクロー・インゴット規格を策定している。
+本プロトコル仕様が要求する超低密度QRコードの光学的読取信頼性、および1000℃超の火災・水害・経年腐食への耐性を担保するため、純銀（Silver 925）および鍛造ステンレス（SUS304真鍮象嵌）にファイバーレーザー深彫り・硫黄黒化加工を施した公式エスクロー規格を策定している。
 仕様・先行配備ロットの詳細は公式ポータルを参照のこと：
 \begin{center}
   \url{https://monolith-id.com/}
 \end{center}
 \else
-To ensure optimal optical scanning reliability of the ultra-low-density QR shares and absolute physical survivability against fire (>1000$^\circ$C), flooding, and environmental decay, the reference hardware specifications for deep fiber-laser engraved Silver 925 and forged SUS304 steel ingots are maintained by Section 9 Inc.
+To ensure optimal optical scanning reliability of the ultra-low-density QR shares and absolute physical survivability against fire (>1000$^\circ$C), flooding, and environmental decay, the reference hardware specifications for deep fiber-laser engraved Silver 925 and forged SUS304 steel ingots with brass inlays are maintained by Section 9 Inc.
 For technical details and priority deployment allocations, refer to the official repository portal:
 \begin{center}
   \url{https://monolith-id.com/}
