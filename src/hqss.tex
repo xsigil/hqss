@@ -398,14 +398,70 @@ openssl enc -d -aes-256-cbc -salt -pbkdf2 -iter 100000 \
 \end{table}
 
 \section{%
-  \ifja 4. 結論 \else 4. Conclusion \fi
+  \ifja 4. 拡張アーキテクチャ：階層型再帰HQSSカスケードによる署名封印とオフライン協調ガバナンス \else 4. Extended Architecture: Threshold Authenticity via Recursive Cascaded HQSS Signature Escrow \fi
 }
+\ifja
+エンタープライズや国家安全保障における合意形成（M\&A、主権サプライチェーン合意、極秘宣誓）においては、契約書本文の可読性を保ちつつも、その法的発効を確定させる「電子署名（PAdES/デジタル署名・検証オラクル）」のみを厳格な組織ヒエラルキー（役職・権限レベル・拒否権）のもとに封印することが求められる。これを中央集権型の認可サーバー（IAM）やセキュアシリコンの動的アクセス制御に委ねた場合、クラウド事業者の共謀や管理者侵害、法的令状（Subpoena）によって単一障害点（SPOF）が生じ、未発効文書が外部で一方的に有効化される致命的リスクを負う。
+
+HQSS-v4.1はこの課題に対し、契約書本文ではなく「電子署名バイナリ」を暗号化標的とし、階層ツリーに沿ってHQSSを再帰的に適用する「階層型再帰HQSSカスケード（Recursive Cascaded HQSS）」を導入する。
+
+\begin{enumerate}
+  \item \textbf{署名ペイロードの基礎HQSS分割:}
+    契約書の有効性を証明する電子署名 $S_{\text{sig}}$ をAES-256-CBCで暗号化し、10等分スライシングを行う。
+    中間・末尾ブロック（$M_1^{\text{sig}} \sim M_9^{\text{sig}}$）に可変長CSPRNGソルトを付加したクラウドバンドル $B_{\text{cloud}}^{\text{sig}}$ はパブリッククラウドへ配備される。
+    先頭断片 $M_0^{\text{sig}}$ とソルト長（4バイトビッグエンディアン）を結合したコアペイロード $P_{\text{core}}^{\text{sig}} = M_0^{\text{sig}} \mathbin{\Vert} \text{uint32\_be}(L_{\text{salt}}^{\text{sig}})$ が、階層ガバナンスにおける直前ノードの保護対象秘密となる。
+  \item \textbf{階層ごとの再帰的クラウド・物理分離:}
+    組織ヒエラルキーの各階層 $k$（例：$k=1$: 経営執行部・CEO、$k=2$: 法務・監査役）において、前階層のコアペイロード $P_{\text{core}}^{(k-1)}$ を新たな平文秘密 $M^{(k)}$ として受領し、再度HQSSを再帰適用する：
+    \begin{itemize}
+      \item \textbf{クラウド配備断片:} スライス $M_1^{(k)} \sim M_9^{(k)}$ に末尾乱数ソルトを付加した中間クラウドバンドル $B_{\text{cloud}}^{(k)}$ を生成し、クラウドストレージに保存・蓄積する。
+      \item \textbf{物理エスクロー断片:} 先頭断片 $M_0^{(k)}$ とそのソルト長（4バイト）からなるコア $P_{\text{core}}^{(k)}$ を、当該階層 $k$ の構成員が保有する物理QRプレート（シルバー925／真鍮象嵌）へ $m_k\text{-of-}n_k$ 閾値（\texttt{gfsplit}）で分散刻印する。
+    \end{itemize}
+  \item \textbf{完全オフライン順序復元パイプライン:}
+    クラウド上には各階層の中間バンドル群 $\{B_{\text{cloud}}^{(1)}, B_{\text{cloud}}^{(2)}, \dots, B_{\text{cloud}}^{\text{sig}}\}$ がすべて公開状態で保存されるが、ソルト・IV・ヘッダーが欠損しているため、単体では数学的に完全なランダムノイズである。
+    復元時には、最上位階層（Tier 1）の物理QRクオラムが集結して $P_{\text{core}}^{(1)}$ を復元し、クラウドの $B_{\text{cloud}}^{(1)}$ と結合して次階層の入力 $P_{\text{core}}^{(2)}$ を解読する。この連鎖を階層順に順次実行していくことで、最終的に署名のコア断片 $P_{\text{core}}^{\text{sig}}$（$M_0^{\text{sig}}$ ＋ 4バイトソルト長）が蘇生する。
+  \item \textbf{署名発効と数学的拒否権（Inherent Veto Power）:}
+    蘇生した $M_0^{\text{sig}}$ をクラウド上の $B_{\text{cloud}}^{\text{sig}}$ と結合・復号することで、はじめて真正な電子署名 $S_{\text{sig}}$ がPDF文書に結合され、国際標準規格に準拠した有効な公文書として世界中で検証可能となる。上位階層の物理プレートが1枚でも欠けていれば、後続のクラウドバンドルは一切アンラップできず、中央サーバーなしで絶対的な拒否権と意思決定シーケンスが数学的に執行される。
+\end{enumerate}
+\else
+In high-stakes corporate and state governance (M\&A execution, sovereign pacts, classified treaties), the primary text of an agreement must remain readable, whereas its legal enforceability—anchored exclusively by its digital signature token (e.g., PAdES)—must be securely quarantined behind an organizational hierarchy (authority tiers, executive veto, quorum availability). Delegating this control to centralized IAM or dynamic secure hardware introduces a single point of failure (SPOF) vulnerable to insider attacks, vendor backdoors, and legal subpoenas.
+
+HQSS-v4.1 introduces the "Recursive Cascaded HQSS" architecture: targeting the digital signature payload rather than the document body, and applying HQSS recursively along the organizational authority tree.
+
+\begin{enumerate}
+  \item \textbf{Signature Payload Dispersion:}
+    The canonical digital signature $S_{\text{sig}}$ validating the PDF is encrypted via AES-256-CBC and fragmented into 10 slices. Intermediate slices $M_1^{\text{sig}} \sim M_9^{\text{sig}}$ masked by trailing CSPRNG padding form the public cloud bundle $B_{\text{cloud}}^{\text{sig}}$. The initial block $M_0^{\text{sig}}$ appended with the 4-byte big-endian salt length constitutes the core payload $P_{\text{core}}^{\text{sig}} = M_0^{\text{sig}} \mathbin{\Vert} \text{uint32\_be}(L_{\text{salt}}^{\text{sig}})$, which serves as the confidential input for the immediate parent tier.
+  \item \textbf{Recursive Tier-by-Tier Cloud/Physical Split:}
+    At each organizational tier $k$ (e.g., Tier 1: Executive Board, Tier 2: Legal/Compliance), the previous tier's core payload $P_{\text{core}}^{(k-1)}$ is ingested as the plaintext secret and split via HQSS:
+    \begin{itemize}
+      \item \textbf{Cloud Artifact:} Partitions $M_1^{(k)} \sim M_9^{(k)}$ concatenated with trailing CSPRNG padding yield intermediate cloud bundle $B_{\text{cloud}}^{(k)}$, escrowed directly in public cloud storage.
+      \item \textbf{Physical Quorum Artifact:} Lead partition $M_0^{(k)}$ combined with its 4-byte salt length footer forms $P_{\text{core}}^{(k)}$, which is dispersed over $GF(2^8)$ at an $m_k$-of-$n_k$ threshold and laser-engraved onto physical QR plates (Silver 925 / SUS304).
+    \end{itemize}
+  \item \textbf{Sequential Offline Unwrapping:}
+    The public cloud hosts the full sequence of intermediate bundles $\{B_{\text{cloud}}^{(1)}, B_{\text{cloud}}^{(2)}, \dots, B_{\text{cloud}}^{\text{sig}}\}$. Because each intermediate bundle strictly lacks its PBKDF2 salt, IV, and lead ciphertext block, the cloud repository yields strictly zero mutual information. During activation, Tier 1's physical quorum combines to yield $P_{\text{core}}^{(1)}$, unwrapping $B_{\text{cloud}}^{(1)}$ to expose Tier 2's core input, cascading deterministically down the tree until the signature core $P_{\text{core}}^{\text{sig}}$ is unsealed.
+  \item \textbf{Signature Activation and Cryptographic Veto:}
+    The recovered $M_0^{\text{sig}}$ and 4-byte length footer assemble with $B_{\text{cloud}}^{\text{sig}}$ to reconstitute the valid digital signature $S_{\text{sig}}$, instantly elevating the inert draft into an authenticated, globally verifiable document. If any executive tier withholds physical shares, downstream cloud bundles remain mathematically indecipherable noise, enforcing non-bypassable veto power entirely offline.
+\end{enumerate}
+\fi
+
+\section{%
+  \ifja 5. 結論 \else 5. Conclusion \fi
+}
+
 \ifja
 HQSS-v4.1は、ハイブリッド秘密分散における最大の死角であった「クラウド単体からの鍵導出・辞書攻撃オラクルの成立可能性」を、$M_0$（先頭スライス）の物理エスクロー隔離によって完全に無力化した。
 ソルト実体を持たずオフセットフッター（4バイト）のみを $M_0$ と共にShamir秘密分散する設計により、物理QRコードのセル密度を極限まで低減させたまま、クラウド側に対する完全な情報理論的安全性を達成している。
 外部クラウドの信頼性や複雑怪奇な独自バイナリに依存せず、POSIX標準コマンドのみで災害からマスターキーを蘇生させる、オフラインファースト時代の極致たる鍵保管プロトコルである。
 \else
 HQSS-v4.1 definitively eliminates offline dictionary attacks and known-plaintext validation oracles by isolating partition $M_0$ into physical Shamir shares. By pairing zero-storage salt reconstruction (4-byte footer) with trailing CSPRNG masking, physical QR density is kept at its theoretical lower bound while achieving unconditional security over public cloud endpoints. Built entirely on standard POSIX primitives, HQSS-v4.1 establishes the definitive standard for disaster-proof key custody.
+\fi
+
+\section*{%
+  \ifja 謝辞 \else Acknowledgments \fi
+}
+\ifja
+著者らは、階層的アクセス制御および権限レベルの可用性に関する鋭い技術的問いを投げかけ、第4節「オニオン・ソルト・カスケード」の定式化への契機を提供してくださった Aidan Herbert 氏（ngraph.io / 分散アイデンティティ・トランザクション研究者）に心より感謝の意を表する。
+\else
+The authors would like to express their sincere gratitude to Aidan Herbert (ngraph.io) for raising critical questions regarding hierarchical access control and participant availability, which directly inspired the formulation of the Onion-Salt Cascade architecture in Section 4.
 \fi
 
 \section*{%
