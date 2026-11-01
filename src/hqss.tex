@@ -358,6 +358,49 @@ openssl enc -d -aes-256-cbc -salt -pbkdf2 -iter 100000 \
     -k "${PASSPHRASE}"
 \end{lstlisting}
 
+\subsection{%
+  \ifja 2.3 分離プリミティブの一般化と等価な実施態様（亜種設計） \else 2.3 Generalization of Partitioning Primitives and Implementation Variants \fi
+}
+\ifja
+HQSS-v4.1のリファレンス実装（リスト1および2）では、災害復旧時における「ツール非依存性」および「任意のPOSIX環境における可搬性」を担保するため、標準GNU/POSIXツールである \texttt{split -n 10 -d} による均等10スライスを採用している。しかしながら、本発明の暗号学的本質は「POSIX特定コマンドの引数挙動」に限定されるものではなく、\textbf{「復号・平文検証の唯一の足がかりとなる重要暗号パラメータ領域（ソルト、IV、定型ヘッダー、初期暗号ブロック等）を物理側へ隔離し、残余ストリームを外部空間に配置する」}というアーキテクチャにある。
+
+したがって、物理エスクロー側へ隔離する対象領域（$M_0$ 相当の特定ペイロード $M_{\text{phys}}$）と、クラウド・外部記憶側へ配置する残余暗号領域（$M_{\text{ext}}$）との分離手法については、以下の等価な変形例・実施態様（亜種）が本プロトコル仕様の権利範囲および設計範疇として包含される。
+
+\begin{enumerate}
+  \item \textbf{絶対バイト長・ブロック暗号境界に基づくピンポイント切り出し型:}
+    暗号化ストリームを比率分割する代わりに、復号および鍵導出に必要なメタデータ領域の絶対長 $K$ バイト（例：OpenSSLの \texttt{Salted\_\_} マジック8バイト ＋ PBKDF2ソルト8バイト ＋ 第1暗号ブロック16バイトの計32バイト、あるいは暗号ブロックサイズ $N_{\text{block}}$ の整数倍）を \texttt{dd}、\texttt{head}、またはバイナリスライサー等を用いて先頭から直接切り出し、$M_{\text{phys}}$ とする。残余の全バイトストリームを $M_{\text{ext}}$ として外部へ配置する。これにより物理QRコードのデータサイズは暗号文全体の総容量に関わらず完全に固定長（極小サイズ）となり、レーザー彫刻の密度を最小化できる。
+  \item \textbf{非均等比率スライシング（$p : 100-p$ 分割）:}
+    均等10等分（10\% : 90\%）に限らず、任意のスライス比率 $p \in (0, 100)$（例：先頭1\%〜30\%、あるいは黄金比分割等）により先頭断片 $M_0$ と残余断片群 $M_{1\dots K}$ を定義する。スライス数も10個に限定されず、2分割（先頭・後続）、あるいは $K$ 分割（$K \ge 2$）の任意整数による分割を含む。
+  \item \textbf{乱数駆動型ダイナミックスライシング:}
+    $M_{\text{phys}}$ の切り出し境界長 $L_{M0}$ 自体を暗号論的擬似乱数（CSPRNG）によって動的に決定する態様。$L_{M0} \in [L_{\min}, L_{\max}]$ の乱数長で先頭領域を隔離し、その長手オフセット情報をコアペイロードフッター（または暗号化パラメータ内）に含めて物理側へ退避する。これにより、攻撃者にとって「クラウド側に残存する断片が平文のどこから開始しているのか」の境界自体が完全に未知の探索空間となる。
+  \item \textbf{構造化パーサー（TLV / ASN.1 / フォーマット仕様）による構文解析分離型:}
+    対象暗号文がOpenSSL rawストリームではなく、PKCS\#7 / CMS、LUKS（Linux Unified Key Setup）ヘッダー、OpenPGPパケット、あるいはage暗号フォーマット等の構造化データである場合、フォーマットパーサーを用いてメタデータ構造（暗号アルゴリズム指定、暗号論的ソルト、IV/ノンス、鍵導出関数の反復回数等）のみを構文木から分離抽出し、$M_{\text{phys}}$ として物理プレートへ格納する。残余のペイロードブロックのみをクラウドへ委託する。
+  \item \textbf{ストライピング／インターリーブ抽出型:}
+    連続した先頭ブロックの切断にとどまらず、暗号化ストリーム全体から所定のストライド間隔（例：偶数バイト／奇数バイト、あるいは $S$ バイトおきの特定バイトプレーン）でデータを抜き出して $M_{\text{phys}}$ を構成する。クラウド側には歯抜けとなった暗号文が残り、CBC等の暗号ブロックチェーン結合性が暗号文全体にわたって数学的に破綻するため、クラウド単体データに対するいかなる暗号解読操作も成立しない。
+  \item \textbf{AONT（All-or-Nothing Transform）および乱数マスク（OTP）併用型:}
+    暗号文に対してAONT変換を施し、その変換鍵ブロック（Canaryブロック）のみを $M_{\text{phys}}$ として物理隔離する態様、あるいは先頭ヘッダー領域に対してCSPRNGによるワンタイムパッド（OTP）を排他的論理和（XOR）で重畳し、その解読用乱数パッドを物理QR側へ退避させる論理的分離態様。
+\end{enumerate}
+\else
+In the reference implementation of HQSS-v4.1 (Listings 1 and 2), decary equal fragmentation via the standard POSIX utility \texttt{split -n 10 -d} is specified to guarantee unconditional tool independence and disaster recovery in any bare-metal POSIX shell. However, the foundational cryptographic architecture of this invention is not constrained to specific command-line arguments, but rather resides in the strict physical escrow of the critical verification metadata (salt, IV, predictable headers, and initial ciphertext blocks) away from the external cloud stream.
+
+Accordingly, the mechanism for isolating the physical segment ($M_{\text{phys}}$, equivalent to $M_0$) from the remaining external stream ($M_{\text{ext}}$, equivalent to $M_{1\dots9}$) encompasses the following equivalent implementation variants:
+
+\begin{enumerate}
+  \item \textbf{Fixed Byte-Length and Block-Boundary Carving:}
+    Rather than fractional splitting, an explicit byte sequence of length $K$ (e.g., exactly 32 bytes spanning the OpenSSL \texttt{Salted\_\_} magic, the 64-bit salt, and the initial 16-byte block, or any multiple of the cipher block size $N_{\text{block}}$) is carved directly from the head of ciphertext $C$ via byte-slicing primitives (\texttt{dd}, \texttt{head}, or custom I/O) to form $M_{\text{phys}}$. The remaining body forms $M_{\text{ext}}$. This ensures $M_{\text{phys}}$ remains strictly constant-size regardless of master secret volume.
+  \item \textbf{Asymmetric Ratio Slicing ($p : 100-p$):}
+    Generalizing beyond the 10\%:90\% boundary to arbitrary ratios $p \in (0, 100)$, or partitioning $C$ into an arbitrary integer count $K \ge 2$, where the lead chunk containing key derivation metadata is assigned to $M_{\text{phys}}$ and trailing chunks are aggregated into $M_{\text{ext}}$.
+  \item \textbf{CSPRNG-Driven Dynamic Boundary Fragmentation:}
+    The boundary offset $L_{M0}$ isolating $M_{\text{phys}}$ is drawn dynamically from a CSPRNG within a bound $[L_{\min}, L_{\max}]$. The dynamically sized lead slice is withheld, and its exact offset is encoded into the physical core footer, completely erasing the entry boundary of the cloud ciphertext.
+  \item \textbf{Format-Aware Semantic AST/TLV Parser Partitioning:}
+    Where the ciphertext structure adheres to formal schemas (PKCS\#7/CMS, LUKS keyslots, OpenPGP RFC 4880 packets, or age format headers), an AST/TLV parser isolates the serialized metadata fields (salt, iteration counts, nonce/IV, and cipher mode identifiers) into $M_{\text{phys}}$, banishing the structural syntax from the cloud store.
+  \item \textbf{Interleaved and Striped Bit/Byte-Plane Extraction:}
+    Rather than continuous head carving, $M_{\text{phys}}$ is constructed by sampling bytes at periodic intervals or strides (e.g., even/odd interleaving or $S$-stride comb sampling). The punctured cloud stream suffers total desynchronization of cipher block chaining throughout the file.
+  \item \textbf{All-or-Nothing Transform (AONT) and Stream-Mask Hybrids:}
+    Applying an All-or-Nothing Transform to $C$ and sequestering only the master unwrap/canary key into physical shares, or masking the leading cryptographic headers via an exclusive-OR (XOR) one-time pad whose reconstruction mask is escrowed strictly in the physical core payload.
+\end{enumerate}
+\fi
+
 \section{%
   \ifja 3. セキュリティおよび暗号論的検証 \else 3. Security and Cryptographic Evaluation \fi
 }
